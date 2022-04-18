@@ -61,15 +61,6 @@
 #define EXEC_RAPID_OVR_LOW          bit(7)
 // #define EXEC_RAPID_OVR_EXTRA_LOW   bit(*) // *NOT SUPPORTED*
 
-#define EXEC_SPINDLE_OVR_RESET         bit(0)
-#define EXEC_SPINDLE_OVR_COARSE_PLUS   bit(1)
-#define EXEC_SPINDLE_OVR_COARSE_MINUS  bit(2)
-#define EXEC_SPINDLE_OVR_FINE_PLUS     bit(3)
-#define EXEC_SPINDLE_OVR_FINE_MINUS    bit(4)
-#define EXEC_SPINDLE_OVR_STOP          bit(5)
-#define EXEC_COOLANT_FLOOD_OVR_TOGGLE  bit(6)
-#define EXEC_COOLANT_MIST_OVR_TOGGLE   bit(7)
-
 // Define system state bit map. The state variable primarily tracks the individual functions
 // of Grbl to manage each without overlapping. It is also used as a messaging flag for
 // critical events.
@@ -137,15 +128,10 @@ typedef struct {
   #endif
   uint8_t f_override;          // Feed rate override value in percent
   uint8_t r_override;          // Rapids override value in percent
-  uint8_t spindle_speed_ovr;   // Spindle speed value in percent
-  uint8_t spindle_stop_ovr;    // Tracks spindle stop override states
   uint8_t report_ovr_counter;  // Tracks when to add override data to status reports.
   uint8_t report_wco_counter;  // Tracks when to add work coordinate offset data to status reports.
   #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
     uint8_t override_ctrl;     // Tracks override control states.
-  #endif
-  #ifdef VARIABLE_SPINDLE
-    float spindle_speed;
   #endif
 } system_t;
 extern system_t sys;
@@ -158,7 +144,6 @@ extern volatile uint8_t sys_probe_state;   // Probing state value.  Used to coor
 extern volatile uint8_t sys_rt_exec_state;   // Global realtime executor bitflag variable for state management. See EXEC bitmasks.
 extern volatile uint8_t sys_rt_exec_alarm;   // Global realtime executor bitflag variable for setting various alarms.
 extern volatile uint8_t sys_rt_exec_motion_override; // Global realtime executor bitflag variable for motion-based overrides.
-extern volatile uint8_t sys_rt_exec_accessory_override; // Global realtime executor bitflag variable for spindle/coolant overrides.
 
 #ifdef DEBUG
   #define EXEC_DEBUG_REPORT  bit(0)
