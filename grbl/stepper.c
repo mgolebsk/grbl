@@ -101,7 +101,7 @@ typedef struct {
 
   uint8_t execute_step;     // Flags step execution for each interrupt.
   uint8_t step_pulse_time;  // Step pulse reset time after step rise
-  uint8_t step_outbits;         // The next stepping-bits to be output
+  uint8_t step_outbits;     // The next stepping-bits to be output
   uint8_t dir_outbits;
   #ifdef ENABLE_DUAL_AXIS
     uint8_t step_outbits_dual;
@@ -111,7 +111,7 @@ typedef struct {
     uint32_t steps[N_AXIS];
   #endif
 
-  uint16_t step_count;       // Steps remaining in line segment motion
+  uint16_t step_count;      // Steps remaining in line segment motion
   uint8_t exec_block_index; // Tracks the current st_block index. Change indicates new block.
   st_block_t *exec_block;   // Pointer to the block data for the segment being executed
   segment_t *exec_segment;  // Pointer to the segment being executed

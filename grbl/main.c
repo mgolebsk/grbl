@@ -34,7 +34,6 @@ volatile uint8_t sys_rt_exec_motion_override; // Global realtime executor bitfla
   volatile uint8_t sys_rt_exec_debug;
 #endif
 
-
 int main(void)
 {
   // Initialize system upon power-up.
@@ -88,6 +87,8 @@ int main(void)
     probe_init();
     plan_reset(); // Clear block buffer and planner variables
     st_reset(); // Clear stepper subsystem variables.
+  
+    pwm_init();
 
     // Sync cleared gcode and planner positions to current system position.
     plan_sync_position();

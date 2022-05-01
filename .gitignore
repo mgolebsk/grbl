@@ -8,3 +8,5 @@ README.md
 .vscode/c_cpp_properties.json
 .vscode/settings.json
 .gitignore
+grbl/.vscode/c_cpp_properties.json
+grbl/.vscode/settings.json
