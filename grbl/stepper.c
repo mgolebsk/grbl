@@ -310,6 +310,10 @@ ISR(TIMER1_COMPA_vect)
 {
   if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
 
+  if(sys_rt_pen_motion & EXEC_PEN_REQUEST_MASK) {
+    return;
+  }
+
   // Set the direction pins a couple of nanoseconds before we step the steppers
   DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK);
   #ifdef ENABLE_DUAL_AXIS
@@ -427,11 +431,35 @@ ISR(TIMER1_COMPA_vect)
     st.counter_z += st.exec_block->steps[Z_AXIS];
   #endif
   if (st.counter_z > st.exec_block->step_event_count) {
-    st.step_outbits |= (1<<Z_STEP_BIT);
-    st.counter_z -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { sys_position[Z_AXIS]--; }
-    else { sys_position[Z_AXIS]++; }
+    // Z move in one step, don't care depth, enough 0==pen_down, 10==pen_up
+    if((st.exec_block->steps[X_AXIS]==0) && (st.exec_block->steps[Y_AXIS]==0)) {
+      //st.counter_z = 0;
+      if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
+        sys_position[Z_AXIS] = 0;
+      }
+      else { 
+        sys_position[Z_AXIS] = 10;
+      }
+      st.step_count = 1;
+    }
+    else {
+      st.step_outbits |= (1<<Z_STEP_BIT);
+      st.counter_z -= st.exec_block->step_event_count;
+      if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
+        sys_position[Z_AXIS]--; 
+      }
+      else { 
+        sys_position[Z_AXIS]++; 
+      }
+    }
+    if (!(sys_rt_pen_motion & EXEC_PEN_IS_UP) && sys_position[Z_AXIS]>0) {
+      sys_rt_pen_motion |= EXEC_PEN_REQUEST_UP;
+    }
+    else if (!(sys_rt_pen_motion & EXEC_PEN_IS_DOWN) && sys_position[Z_AXIS]<=0) {
+      sys_rt_pen_motion |= EXEC_PEN_REQUEST_DOWN;
+    }
   }
+
 
   // During a homing cycle, lock out and prevent desired axes from moving.
   if (sys.state == STATE_HOMING) { 

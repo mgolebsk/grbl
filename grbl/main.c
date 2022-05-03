@@ -24,12 +24,13 @@
 
 // Declare system global variable structure
 system_t sys;
-int32_t sys_position[N_AXIS];      // Real-time machine (aka home) position vector in steps.
-int32_t sys_probe_position[N_AXIS]; // Last probe position in machine coordinates and steps.
-volatile uint8_t sys_probe_state;   // Probing state value.  Used to coordinate the probing cycle with stepper ISR.
+int32_t sys_position[N_AXIS];         // Real-time machine (aka home) position vector in steps.
+int32_t sys_probe_position[N_AXIS];   // Last probe position in machine coordinates and steps.
+volatile uint8_t sys_probe_state;     // Probing state value.  Used to coordinate the probing cycle with stepper ISR.
 volatile uint8_t sys_rt_exec_state;   // Global realtime executor bitflag variable for state management. See EXEC bitmasks.
 volatile uint8_t sys_rt_exec_alarm;   // Global realtime executor bitflag variable for setting various alarms.
 volatile uint8_t sys_rt_exec_motion_override; // Global realtime executor bitflag variable for motion-based overrides.
+volatile uint8_t sys_rt_pen_motion;   // Global realtime pen state bitflag
 #ifdef DEBUG
   volatile uint8_t sys_rt_exec_debug;
 #endif
@@ -44,6 +45,8 @@ int main(void)
 
   memset(sys_position,0,sizeof(sys_position)); // Clear machine position.
   sei(); // Enable interrupts
+
+  pwm_init();      // Configure PWM subsystem
 
   // Initialize system state.
   #ifdef FORCE_INITIALIZATION_ALARM
@@ -79,6 +82,7 @@ int main(void)
     sys_rt_exec_state = 0;
     sys_rt_exec_alarm = 0;
     sys_rt_exec_motion_override = 0;
+    sys_rt_pen_motion = 0;
     
     // Reset Grbl primary systems.
     serial_reset_read_buffer(); // Clear serial read buffer
@@ -86,10 +90,9 @@ int main(void)
     limits_init();
     probe_init();
     plan_reset(); // Clear block buffer and planner variables
-    st_reset(); // Clear stepper subsystem variables.
+    st_reset();   // Clear stepper subsystem variables.
+    pwm_reset();  // Clear PWM subsystem
   
-    pwm_init();
-
     // Sync cleared gcode and planner positions to current system position.
     plan_sync_position();
     gc_sync_position();

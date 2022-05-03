@@ -37,6 +37,12 @@
 #define EXEC_MOTION_CANCEL  bit(6) // bitmask 01000000
 #define EXEC_SLEEP          bit(7) // bitmask 10000000
 
+#define EXEC_PEN_REQUEST_UP   bit(0) // bitmask 00000001
+#define EXEC_PEN_IS_UP        bit(1) // bitmask 00000010
+#define EXEC_PEN_REQUEST_DOWN bit(2) // bitmask 00000100
+#define EXEC_PEN_IS_DOWN      bit(3) // bitmask 00001000
+#define EXEC_PEN_REQUEST_MASK (EXEC_PEN_REQUEST_UP | EXEC_PEN_REQUEST_DOWN)
+
 // Alarm executor codes. Valid values (1-255). Zero is reserved.
 #define EXEC_ALARM_HARD_LIMIT                 1
 #define EXEC_ALARM_SOFT_LIMIT                 2
@@ -106,14 +112,6 @@
   #define CONTROL_PIN_INDEX_CYCLE_START   bit(2)
 #endif
 
-// Define spindle stop override control states.
-#define SPINDLE_STOP_OVR_DISABLED       0  // Must be zero.
-#define SPINDLE_STOP_OVR_ENABLED        bit(0)
-#define SPINDLE_STOP_OVR_INITIATE       bit(1)
-#define SPINDLE_STOP_OVR_RESTORE        bit(2)
-#define SPINDLE_STOP_OVR_RESTORE_CYCLE  bit(3)
-
-
 // Define global system variables
 typedef struct {
   uint8_t state;               // Tracks the current system state of Grbl.
@@ -123,6 +121,7 @@ typedef struct {
   uint8_t step_control;        // Governs the step segment generator depending on system state.
   uint8_t probe_succeeded;     // Tracks if last probing cycle was successful.
   uint8_t homing_axis_lock;    // Locks axes when limits engage. Used as an axis motion mask in the stepper ISR.
+  uint8_t tool;                // Current tool number
   #ifdef ENABLE_DUAL_AXIS
     uint8_t homing_axis_lock_dual;
   #endif
@@ -144,6 +143,7 @@ extern volatile uint8_t sys_probe_state;   // Probing state value.  Used to coor
 extern volatile uint8_t sys_rt_exec_state;   // Global realtime executor bitflag variable for state management. See EXEC bitmasks.
 extern volatile uint8_t sys_rt_exec_alarm;   // Global realtime executor bitflag variable for setting various alarms.
 extern volatile uint8_t sys_rt_exec_motion_override; // Global realtime executor bitflag variable for motion-based overrides.
+extern volatile uint8_t sys_rt_pen_motion;   // Global realtime pen state bitflag
 
 #ifdef DEBUG
   #define EXEC_DEBUG_REPORT  bit(0)

@@ -237,6 +237,10 @@ void protocol_exec_rt_system()
     system_clear_exec_alarm(); // Clear alarm
   }
 
+  if(sys_rt_pen_motion & EXEC_PEN_REQUEST_MASK) {
+    pen_rt_move();
+  }
+
   rt_exec = sys_rt_exec_state; // Copy volatile sys_rt_exec_state.
   if (rt_exec) {
 
