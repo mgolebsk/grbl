@@ -29,6 +29,7 @@
 
 // Axis array index values. Must start with 0 and be continuous.
 #define N_AXIS 3 // Number of axes
+#define N_AXIS_PAPER 2 // Number of axes being checked
 #define X_AXIS 0 // Axis indexing value.
 #define Y_AXIS 1
 #define Z_AXIS 2
@@ -56,9 +57,11 @@
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #define isequal_position_vector(a,b) !(memcmp(a, b, sizeof(float)*N_AXIS))
+#define xorr(a,b) (((a) || (b)) && !((a) && (b)))
 
 // Bit field and masking macros
 #define bit(n) (1 << n)
+// Set bits with given mask
 #define bit_true(x,mask) (x) |= (mask)
 #define bit_false(x,mask) (x) &= ~(mask)
 #define bit_istrue(x,mask) ((x & mask) != 0)

@@ -25,7 +25,6 @@
 // arbitrary value, and some GUIs may require more. So we increased it based on a max safe
 // value when converting a float (7.2 digit precision)s to an integer.
 #define MAX_LINE_NUMBER 10000000
-#define MAX_TOOL_NUMBER 255 // Limited by max unsigned 8-bit value
 
 #define AXIS_COMMAND_NONE 0
 #define AXIS_COMMAND_NON_MODAL 1
@@ -74,6 +73,7 @@ uint8_t gc_execute_line(char *line)
 
   memset(&gc_block, 0, sizeof(parser_block_t)); // Initialize the parser block struct.
   memcpy(&gc_block.modal,&gc_state.modal,sizeof(gc_modal_t)); // Copy current modes
+  gc_block.values.t = gc_state.tool; // Copy current tool
 
   uint8_t axis_command = AXIS_COMMAND_NONE;
   uint8_t axis_0, axis_1, axis_linear;
@@ -294,7 +294,7 @@ uint8_t gc_execute_line(char *line)
           // case 'Q': // Not supported
           case 'R': word_bit = WORD_R; gc_block.values.r = value; break;
           case 'T': word_bit = WORD_T; 
-					  if (value > MAX_TOOL_NUMBER) { FAIL(STATUS_GCODE_MAX_VALUE_EXCEEDED); }
+					  if (value >= MAX_TOOL_NUMBER) { FAIL(STATUS_GCODE_MAX_VALUE_EXCEEDED); }
             gc_block.values.t = int_value;
 						break;
           case 'X': word_bit = WORD_X; gc_block.values.xyz[X_AXIS] = value; axis_words |= (1<<X_AXIS); break;
@@ -872,12 +872,26 @@ uint8_t gc_execute_line(char *line)
   gc_state.feed_rate = gc_block.values.f; // Always copy this value. See feed rate error-checking.
   pl_data->feed_rate = gc_state.feed_rate; // Record data for planner use.
 
-  // [5. Select tool ]: NOT SUPPORTED. Only tracks tool value.
-  gc_state.tool = gc_block.values.t;
+  // [5 & 6. Select tool & Change tool ]: Pen up -> move X axis -> Pen down 
 
-  // [6. Change tool ]: NOT SUPPORTED
-
-  // FIXME do uzupelnienia
+  if (gc_state.tool != gc_block.values.t) {
+    uint8_t tmp_motion = gc_block.modal.motion;
+    uint8_t tmp_condition = pl_data->condition;
+    gc_block.modal.motion == MOTION_MODE_SEEK;
+    pl_data->condition |= PL_COND_FLAG_RAPID_MOTION; // Set rapid motion condition flag.
+    float tool_change[N_AXIS];
+    memcpy(tool_change, gc_state.position, N_AXIS*sizeof(float));
+    // Pen UP
+    tool_change[Z_AXIS] = 5;
+    mc_line(tool_change, pl_data);
+    // Change X position (new tool offset)
+    gc_state.tool = gc_block.values.t;
+    mc_line(tool_change, pl_data);
+    // Move to original position, but with new tool
+    mc_line(gc_state.position, pl_data);
+    pl_data->condition = tmp_condition;
+    gc_block.modal.motion = tmp_motion;
+  }
 
   // [9. Override control ]: NOT SUPPORTED. Always enabled. Except for a Grbl-only parking control.
   #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
@@ -985,7 +999,7 @@ uint8_t gc_execute_line(char *line)
         #ifndef ALLOW_FEED_OVERRIDE_DURING_PROBE_CYCLES
           pl_data->condition |= PL_COND_FLAG_NO_FEED_OVERRIDE;
         #endif
-        gc_update_pos = mc_probe_cycle(gc_block.values.xyz, pl_data, gc_parser_flags);
+        gc_update_pos = mc_probe_cycle(gc_block.values.xyz, pl_data, gc_parser_flags, PROBE_X_END);
       }  
      
       // As far as the parser is concerned, the position is now == target. In reality the

@@ -81,80 +81,58 @@
   #define LIMIT_PIN        PINB
   #define LIMIT_PORT       PORTB
   #define X_LIMIT_BIT      1  // Uno Digital Pin 9
-  #define Y_LIMIT_BIT      2  // Uno Digital Pin 10
-  #define Z_LIMIT_BIT      3  // Uno Digital Pin 11
-  #if !defined(ENABLE_DUAL_AXIS)
-    #define LIMIT_MASK     ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)) // All limit bits
-  #endif
+  #define LIMIT_MASK       (1<<X_LIMIT_BIT) // Only X limit bit
   #define LIMIT_INT        PCIE0  // Pin change interrupt enable pin
   #define LIMIT_INT_vect   PCINT0_vect
   #define LIMIT_PCMSK      PCMSK0 // Pin change interrupt register
+
+  #define SENSOR_DDR        DDRB
+  #define SENSOR_PIN        PINB
+  #define SENSOR_PORT       PORTB
+  #define PAPER_SENSOR_IN           4  // Uno Digital Pin 12
+  #define PAPER_SENSOR_Y            2  // Uno Digital Pin 10 (old Y_LIMIT_BIT)
+  #define PAPER_SENSOR_X            3  // Uno Digital Pin 11 (old Z_LIMIT_BIT)
+  #define PEN_SENSOR                5  // Uno Digital Pin 13 (BUILDIN_LED)
+  #define SENSOR_MASK     ((1<<PAPER_SENSOR_IN)|(1<<PAPER_SENSOR_Y)|(1<<PAPER_SENSOR_X)) // All sensor bits
+  #define PAPER_IS_OUT    (SENSOR_PIN & bit(PAPER_SENSOR_IN))
+  #define PAPER_X_IS_OUT  (SENSOR_PIN & bit(PAPER_SENSOR_X))
+  #define PAPER_Y_IS_OUT  (SENSOR_PIN & bit(PAPER_SENSOR_Y))
+  #define PEN_IS_DOWN     (SENSOR_PIN & bit(PEN_SENSOR))
+
 
   // Define user-control controls (cycle start, reset, feed hold) input pins.
   // NOTE: All CONTROLs pins must be on the same port and not on a port with other input pins (limits).
   #define CONTROL_DDR       DDRC
   #define CONTROL_PIN       PINC
   #define CONTROL_PORT      PORTC
-  #define CONTROL_RESET_BIT         0  // Uno Analog Pin 0
-  #define CONTROL_FEED_HOLD_BIT     1  // Uno Analog Pin 1
-  #define CONTROL_CYCLE_START_BIT   2  // Uno Analog Pin 2
-  #define CONTROL_SAFETY_DOOR_BIT   1  // Uno Analog Pin 1 NOTE: Safety door is shared with feed hold. Enabled by config define.
+  #define CONTROL_FEED_HOLD_BIT     0  // Uno Analog Pin 0 (orig. Reset / Abort)
+  #define CONTROL_LOAD_PAPER_BIT    1  // Uno Analog Pin 1 (orig. Feed Hold)
+  #define CONTROL_RESET_BIT         2  // Uno Analog Pin 2 (orig. Cycle Start / Resume)
+  #define CONTROL_HOMING_BIT        3  // Uno Analog Pin 3 (orig. Coolant Enable)
+
+
+  #define C_I2C_SDA       4  // Uno Analog Pin 4  I2C SDA
+  #define C_I2C_SCL       5  // Uno Analog Pin 5  I2C SCL
+
+  // FIXME ONLY ANALOG INPUT PINS ADC6 ADC7
+  #define C_FIX_ANALOG_TO_USE1       6  // Uno Analog Pin 6  
+  #define C_FIX_ANALOG_TO_USE2       7  // Uno Analog Pin 7
+
+
+
   #define CONTROL_INT       PCIE1  // Pin change interrupt enable pin
   #define CONTROL_INT_vect  PCINT1_vect
   #define CONTROL_PCMSK     PCMSK1 // Pin change interrupt register
-  #define CONTROL_MASK      ((1<<CONTROL_RESET_BIT)|(1<<CONTROL_FEED_HOLD_BIT)|(1<<CONTROL_CYCLE_START_BIT)|(1<<CONTROL_SAFETY_DOOR_BIT))
+  #define CONTROL_IRQ_MASK      (bit(CONTROL_RESET_BIT)|bit(CONTROL_FEED_HOLD_BIT)|bit(CONTROL_HOMING_BIT)|bit(CONTROL_LOAD_PAPER_BIT))
+  #define CONTROL_PULLUP_MASK   (bit(CONTROL_RESET_BIT)|bit(CONTROL_FEED_HOLD_BIT)|bit(CONTROL_HOMING_BIT)|bit(CONTROL_LOAD_PAPER_BIT)|bit(PEN_SENSOR))
   #define CONTROL_INVERT_MASK   CONTROL_MASK // May be re-defined to only invert certain control pins.
 
+ 
   // Define probe switch input pin.
-  #define PROBE_DDR       DDRC
-  #define PROBE_PIN       PINC
-  #define PROBE_PORT      PORTC
-  #define PROBE_BIT       5  // Uno Analog Pin 5
-  #define PROBE_MASK      (1<<PROBE_BIT)
-
-  #ifdef ENABLE_DUAL_AXIS
-
-    // Dual axis feature requires an independent step pulse pin to operate. The independent direction pin is not 
-    // absolutely necessary but facilitates easy direction inverting with a Grbl $$ setting. These pins replace 
-    // the spindle direction and optional coolant mist pins.
-
-    #ifdef DUAL_AXIS_CONFIG_PROTONEER_V3_51
-      // NOTE: Step pulse and direction pins may be on any port and output pin.
-      #define STEP_DDR_DUAL       DDRC
-      #define STEP_PORT_DUAL      PORTC
-      #define DUAL_STEP_BIT       4  // Uno Analog Pin 4
-      #define STEP_MASK_DUAL      ((1<<DUAL_STEP_BIT))
-      #define DIRECTION_DDR_DUAL  DDRC
-      #define DIRECTION_PORT_DUAL PORTC
-      #define DUAL_DIRECTION_BIT  3  // Uno Analog Pin 3
-      #define DIRECTION_MASK_DUAL ((1<<DUAL_DIRECTION_BIT))
-
-      // NOTE: Dual axis limit is shared with the z-axis limit pin by default. Pin used must be on the same port
-      // as other limit pins.
-      #define DUAL_LIMIT_BIT    Z_LIMIT_BIT
-      #define LIMIT_MASK        ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<DUAL_LIMIT_BIT))
-
-    #endif
-
-    // NOTE: Variable spindle not supported with this shield.
-    #ifdef DUAL_AXIS_CONFIG_CNC_SHIELD_CLONE
-      // NOTE: Step pulse and direction pins may be on any port and output pin.
-      #define STEP_DDR_DUAL       DDRB
-      #define STEP_PORT_DUAL      PORTB
-      #define DUAL_STEP_BIT       4  // Uno Digital Pin 12
-      #define STEP_MASK_DUAL      ((1<<DUAL_STEP_BIT))
-      #define DIRECTION_DDR_DUAL  DDRB
-      #define DIRECTION_PORT_DUAL PORTB
-      #define DUAL_DIRECTION_BIT  5  // Uno Digital Pin 13
-      #define DIRECTION_MASK_DUAL ((1<<DUAL_DIRECTION_BIT))
-
-      // NOTE: Dual axis limit is shared with the z-axis limit pin by default.
-      #define DUAL_LIMIT_BIT    Z_LIMIT_BIT
-      #define LIMIT_MASK        ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<DUAL_LIMIT_BIT))
-
-    #endif
-
-  #endif
+  #define PROBE_DDR       DDRB
+  #define PROBE_PIN       PINB
+  #define PROBE_PORT      PORTB
+  #define PROBE_MASK      (bit(PAPER_SENSOR_X) | bit(PAPER_SENSOR_Y) )
 
 #endif
 

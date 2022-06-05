@@ -20,17 +20,19 @@
 
 #include "grbl.h"
 
+volatile uint8_t presed_control_pins;
 
 void system_init()
 {
-  CONTROL_DDR &= ~(CONTROL_MASK); // Configure as input pins
+  CONTROL_DDR &= ~(CONTROL_PULLUP_MASK); // Configure as input pins
   #ifdef DISABLE_CONTROL_PIN_PULL_UP
     CONTROL_PORT &= ~(CONTROL_MASK); // Normal low operation. Requires external pull-down.
   #else
-    CONTROL_PORT |= CONTROL_MASK;   // Enable internal pull-up resistors. Normal high operation.
+    CONTROL_PORT |= CONTROL_PULLUP_MASK;   // Enable internal pull-up resistors. Normal high operation.
   #endif
-  CONTROL_PCMSK |= CONTROL_MASK;  // Enable specific pins of the Pin Change Interrupt
+  CONTROL_PCMSK |= CONTROL_IRQ_MASK;  // Enable specific pins of the Pin Change Interrupt
   PCICR |= (1 << CONTROL_INT);   // Enable Pin Change Interrupt
+  presed_control_pins = 0;
 }
 
 
@@ -40,18 +42,25 @@ void system_init()
 uint8_t system_control_get_state()
 {
   uint8_t control_state = 0;
-  uint8_t pin = (CONTROL_PIN & CONTROL_MASK) ^ CONTROL_MASK;
+  uint8_t pin = (CONTROL_PIN & CONTROL_IRQ_MASK) ^ CONTROL_IRQ_MASK;
   #ifdef INVERT_CONTROL_PIN_MASK
     pin ^= INVERT_CONTROL_PIN_MASK;
   #endif
+  // CONTROL_FEED_HOLD_BIT are on/off pin
+  if (bit_istrue(pin,(1<<CONTROL_FEED_HOLD_BIT))) { 
+    control_state |= CONTROL_PIN_INDEX_FEED_HOLD; 
+    presed_control_pins |= CONTROL_PIN_INDEX_CYCLE_START;
+  }
+  else if (presed_control_pins & CONTROL_PIN_INDEX_CYCLE_START) { 
+    control_state |= CONTROL_PIN_INDEX_CYCLE_START; 
+    presed_control_pins &= ~CONTROL_PIN_INDEX_CYCLE_START;
+  }
+  if (bit_istrue(pin,bit(CONTROL_HOMING_BIT))) { 
+    presed_control_pins |= bit(CONTROL_HOMING_BIT);
+  }
   if (pin) {
-    #ifdef ENABLE_SAFETY_DOOR_INPUT_PIN
-      if (bit_istrue(pin,(1<<CONTROL_SAFETY_DOOR_BIT))) { control_state |= CONTROL_PIN_INDEX_SAFETY_DOOR; }
-    #else
-      if (bit_istrue(pin,(1<<CONTROL_FEED_HOLD_BIT))) { control_state |= CONTROL_PIN_INDEX_FEED_HOLD; }
-    #endif
     if (bit_istrue(pin,(1<<CONTROL_RESET_BIT))) { control_state |= CONTROL_PIN_INDEX_RESET; }
-    if (bit_istrue(pin,(1<<CONTROL_CYCLE_START_BIT))) { control_state |= CONTROL_PIN_INDEX_CYCLE_START; }
+    if (bit_istrue(pin,(1<<CONTROL_LOAD_PAPER_BIT))) { control_state |= CONTROL_PIN_INDEX_PAPER_LOAD; }
   }
   return(control_state);
 }
@@ -71,26 +80,13 @@ ISR(CONTROL_INT_vect)
     if (bit_istrue(pin,CONTROL_PIN_INDEX_CYCLE_START)) {
       bit_true(sys_rt_exec_state, EXEC_CYCLE_START);
     }
-    #ifndef ENABLE_SAFETY_DOOR_INPUT_PIN
-      if (bit_istrue(pin,CONTROL_PIN_INDEX_FEED_HOLD)) {
+    if (bit_istrue(pin,CONTROL_PIN_INDEX_FEED_HOLD)) {
         bit_true(sys_rt_exec_state, EXEC_FEED_HOLD);
-    #else
-      if (bit_istrue(pin,CONTROL_PIN_INDEX_SAFETY_DOOR)) {
-        bit_true(sys_rt_exec_state, EXEC_SAFETY_DOOR);
-    #endif
+    }
+    if (bit_istrue(pin,CONTROL_PIN_INDEX_PAPER_LOAD)) {
+      bit_true(sys_rt_exec_state, EXEC_PAPER_LOAD);
     }
   }
-}
-
-
-// Returns if safety door is ajar(T) or closed(F), based on pin state.
-uint8_t system_check_safety_door_ajar()
-{
-  #ifdef ENABLE_SAFETY_DOOR_INPUT_PIN
-    return(system_control_get_state() & CONTROL_PIN_INDEX_SAFETY_DOOR);
-  #else
-    return(false); // Input pin not enabled, so just return that it's closed.
-  #endif
 }
 
 
@@ -159,8 +155,6 @@ uint8_t system_execute_line(char *line)
           break;
         case 'X' : // Disable alarm lock [ALARM]
           if (sys.state == STATE_ALARM) {
-            // Block if safety door is ajar.
-            if (system_check_safety_door_ajar()) { return(STATUS_CHECK_DOOR); }
             report_feedback_message(MESSAGE_ALARM_UNLOCK);
             sys.state = STATE_IDLE;
             // Don't run startup script. Prevents stored moves in startup from causing accidents.
@@ -178,7 +172,6 @@ uint8_t system_execute_line(char *line)
           break;
         case 'H' : // Perform homing cycle [IDLE/ALARM]
           if (bit_isfalse(settings.flags,BITFLAG_HOMING_ENABLE)) {return(STATUS_SETTING_DISABLED); }
-          if (system_check_safety_door_ajar()) { return(STATUS_CHECK_DOOR); } // Block if safety door is ajar.
           sys.state = STATE_HOMING; // Set system state variable
           if (line[2] == 0) {
             mc_homing_cycle(HOMING_CYCLE_ALL);
@@ -291,19 +284,10 @@ void system_flag_wco_change()
 //   serves as a central place to compute the transformation.
 float system_convert_axis_steps_to_mpos(int32_t *steps, uint8_t idx)
 {
-  float pos;
-  #ifdef COREXY
-    if (idx==X_AXIS) {
-      pos = (float)system_convert_corexy_to_x_axis_steps(steps) / settings.steps_per_mm[idx];
-    } else if (idx==Y_AXIS) {
-      pos = (float)system_convert_corexy_to_y_axis_steps(steps) / settings.steps_per_mm[idx];
-    } else {
-      pos = steps[idx]/settings.steps_per_mm[idx];
-    }
-  #else
-    pos = steps[idx]/settings.steps_per_mm[idx];
-  #endif
-  return(pos);
+  if(idx == X_AXIS) {
+    return steps[idx]/settings.steps_per_mm[idx] + settings.tool_x_offset[sys_tool];
+  }
+  return steps[idx]/settings.steps_per_mm[idx];
 }
 
 
@@ -317,38 +301,44 @@ void system_convert_array_steps_to_mpos(float *position, int32_t *steps)
 }
 
 
-// CoreXY calculation only. Returns x or y-axis "steps" based on CoreXY motor steps.
-#ifdef COREXY
-  int32_t system_convert_corexy_to_x_axis_steps(int32_t *steps)
-  {
-    return( (steps[A_MOTOR] + steps[B_MOTOR])/2 );
-  }
-  int32_t system_convert_corexy_to_y_axis_steps(int32_t *steps)
-  {
-    return( (steps[A_MOTOR] - steps[B_MOTOR])/2 );
-  }
-#endif
-
-
 // Checks and reports if target array exceeds machine travel limits.
+// return alarm code or 0 if to limit exided
 uint8_t system_check_travel_limits(float *target)
 {
   uint8_t idx;
-  for (idx=0; idx<N_AXIS; idx++) {
+  for (idx=0; idx<N_AXIS_PAPER; idx++) {
     #ifdef HOMING_FORCE_SET_ORIGIN
       // When homing forced set origin is enabled, soft limits checks need to account for directionality.
       // NOTE: max_travel is stored as negative
       if (bit_istrue(settings.homing_dir_mask,bit(idx))) {
-        if (target[idx] < 0 || target[idx] > -settings.max_travel[idx]) { return(true); }
+        if (target[idx] < 0 || target[idx] > -settings.max_travel[idx]) { return(EXEC_ALARM_SOFT_LIMIT); }
       } else {
-        if (target[idx] > 0 || target[idx] < settings.max_travel[idx]) { return(true); }
+        if (target[idx] > 0 || target[idx] < settings.max_travel[idx]) { return(EXEC_ALARM_SOFT_LIMIT); }
       }
     #else
+      float t;
+      if(idx == X_AXIS) {
+        t = target[idx] - settings.tool_x_offset[sys_tool];
+      }
+      else {
+        t = target[idx];
+      }
       // NOTE: max_travel is stored as negative
-      if (target[idx] > 0 || target[idx] < settings.max_travel[idx]) { return(true); }
+      if ((t>0) || (t<settings.max_travel[idx])) {
+        return EXEC_ALARM_SOFT_LIMIT;
+      } 
+      // check paper size only when pen is down
+      if(target[Z_AXIS] <= 0.0) {
+        // NOTE: paper_max_travel is stored as negative
+        //     |-left side                           |-right side
+        //     v                                     v
+        if ((target[idx]>paper_min_travel[idx]) || (target[idx]<paper_max_travel[idx])) { 
+          return EXEC_ALARM_SOFT_LIMIT_PAGE; 
+        }
+      }
     #endif
   }
-  return(false);
+  return 0;
 }
 
 

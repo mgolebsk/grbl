@@ -81,6 +81,7 @@ typedef struct {
   uint16_t n_step;           // Number of step events to be executed for this segment
   uint16_t cycles_per_tick;  // Step distance traveled per ISR tick, aka step rate.
   uint8_t  st_block_index;   // Stepper block data index. Uses this information to execute this segment.
+  uint8_t tool;
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
     uint8_t amass_level;    // Indicates AMASS level for the ISR to execute this segment
   #else
@@ -310,7 +311,7 @@ ISR(TIMER1_COMPA_vect)
 {
   if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
 
-  if(sys_rt_pen_motion & EXEC_PEN_REQUEST_MASK) {
+  if(sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) {
     return;
   }
 
@@ -348,6 +349,7 @@ ISR(TIMER1_COMPA_vect)
     if (segment_buffer_head != segment_buffer_tail) {
       // Initialize new step segment and load number of steps to execute
       st.exec_segment = &segment_buffer[segment_buffer_tail];
+      sys_tool = st.exec_segment->tool;
 
       #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
         // With AMASS is disabled, set timer prescaler for segments with slow step frequencies (< 250Hz).
@@ -388,7 +390,7 @@ ISR(TIMER1_COMPA_vect)
 
 
   // Check probing state.
-  if (sys_probe_state == PROBE_ACTIVE) { probe_state_monitor(); }
+  if (sys_probe_state) { probe_state_monitor(); }
 
   // Reset step out bits.
   st.step_outbits = 0;
@@ -431,7 +433,7 @@ ISR(TIMER1_COMPA_vect)
     st.counter_z += st.exec_block->steps[Z_AXIS];
   #endif
   if (st.counter_z > st.exec_block->step_event_count) {
-    // Z move in one step, don't care depth, enough 0==pen_down, 10==pen_up
+    // Z move in one step, don't care depth, enough 0=>pen_down, 10=>pen_up
     if((st.exec_block->steps[X_AXIS]==0) && (st.exec_block->steps[Y_AXIS]==0)) {
       //st.counter_z = 0;
       if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
@@ -441,6 +443,8 @@ ISR(TIMER1_COMPA_vect)
         sys_position[Z_AXIS] = 10;
       }
       st.step_count = 1;
+      // stop stepers to precise move pen
+      sys_rt_pen_motion |= EXEC_PEN_MOVE_FORCE;
     }
     else {
       st.step_outbits |= (1<<Z_STEP_BIT);
@@ -452,10 +456,10 @@ ISR(TIMER1_COMPA_vect)
         sys_position[Z_AXIS]++; 
       }
     }
-    if (!(sys_rt_pen_motion & EXEC_PEN_IS_UP) && sys_position[Z_AXIS]>0) {
+    if (sys_position[Z_AXIS]>0) {
       sys_rt_pen_motion |= EXEC_PEN_REQUEST_UP;
     }
-    else if (!(sys_rt_pen_motion & EXEC_PEN_IS_DOWN) && sys_position[Z_AXIS]<=0) {
+    else if (sys_position[Z_AXIS]<=0) {
       sys_rt_pen_motion |= EXEC_PEN_REQUEST_DOWN;
     }
   }
@@ -477,9 +481,6 @@ ISR(TIMER1_COMPA_vect)
   }
 
   st.step_outbits ^= step_port_invert_mask;  // Apply step port invert mask
-  #ifdef ENABLE_DUAL_AXIS
-    st.step_outbits_dual ^= step_port_invert_mask_dual;
-  #endif
   busy = false;
 }
 
@@ -845,6 +846,7 @@ void st_prep_buffer()
 
     // Set new segment to point to the current segment data block.
     prep_segment->st_block_index = prep.st_block_index;
+    prep_segment->tool = pl_block->tool;
 
     /*------------------------------------------------------------------------------------
         Compute the average velocity of this new segment by determining the total distance
@@ -1059,7 +1061,7 @@ void st_prep_buffer()
 // divided by the ACCELERATION TICKS PER SECOND in seconds.
 float st_get_realtime_rate()
 {
-  if (sys.state & (STATE_CYCLE | STATE_HOMING | STATE_HOLD | STATE_JOG | STATE_SAFETY_DOOR)){
+  if (sys.state & (STATE_CYCLE | STATE_HOMING | STATE_HOLD | STATE_JOG )){
     return prep.current_speed;
   }
   return 0.0f;

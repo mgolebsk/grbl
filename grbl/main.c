@@ -25,7 +25,23 @@
 // Declare system global variable structure
 system_t sys;
 int32_t sys_position[N_AXIS];         // Real-time machine (aka home) position vector in steps.
+uint8_t sys_tool;
 int32_t sys_probe_position[N_AXIS];   // Last probe position in machine coordinates and steps.
+
+//         0 sys_position[X_AXIS]
+// ---------
+// |-------|
+// |-------|
+// ^       ^paper_max_travel[X_AXIS]
+// paper_min_travel[X_AXIS]
+// The right most position allowed by paper,  (max-width,0) point
+// NOTE: paper_max_travel is stored as negative
+float paper_max_travel[N_AXIS_PAPER];
+
+// The left most position allowed by paper, (0,0) point
+// NOTE: paper_min_travel is stored as negative
+float paper_min_travel[N_AXIS_PAPER];
+
 volatile uint8_t sys_probe_state;     // Probing state value.  Used to coordinate the probing cycle with stepper ISR.
 volatile uint8_t sys_rt_exec_state;   // Global realtime executor bitflag variable for state management. See EXEC bitmasks.
 volatile uint8_t sys_rt_exec_alarm;   // Global realtime executor bitflag variable for setting various alarms.
@@ -42,11 +58,13 @@ int main(void)
   settings_init(); // Load Grbl settings from EEPROM
   stepper_init();  // Configure stepper pins and interrupt timers
   system_init();   // Configure pinout pins and pin-change interrupt
+  sensor_init();   // Configure sensors
 
   memset(sys_position,0,sizeof(sys_position)); // Clear machine position.
   sei(); // Enable interrupts
 
   pwm_init();      // Configure PWM subsystem
+  pg_reset();      // Set page to 0mm x 0mm size 
 
   // Initialize system state.
   #ifdef FORCE_INITIALIZATION_ALARM
@@ -83,16 +101,18 @@ int main(void)
     sys_rt_exec_alarm = 0;
     sys_rt_exec_motion_override = 0;
     sys_rt_pen_motion = 0;
-    
+  
     // Reset Grbl primary systems.
     serial_reset_read_buffer(); // Clear serial read buffer
     gc_init(); // Set g-code parser to default state
     limits_init();
     probe_init();
     plan_reset(); // Clear block buffer and planner variables
-    st_reset();   // Clear stepper subsystem variables.
+    st_reset();   // Clear stepper subsystem variables
     pwm_reset();  // Clear PWM subsystem
-  
+    led_reset();  // Clear LED state
+    pl_reset();   // Reset Paper Load subsystem
+
     // Sync cleared gcode and planner positions to current system position.
     plan_sync_position();
     gc_sync_position();

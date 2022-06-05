@@ -37,7 +37,8 @@
 #define BIT_HOMING_ENABLE      4
 #define BIT_SOFT_LIMIT_ENABLE  5
 #define BIT_INVERT_LIMIT_PINS  6
-#define BIT_INVERT_PROBE_PIN   7
+// FIXME DO REUZYCIA
+#define BIT_INVERT_PROBE_PIN_XXX   7
 
 #define BITFLAG_REPORT_INCHES      bit(BIT_REPORT_INCHES)
 #define BITFLAG_LASER_MODE         bit(BIT_LASER_MODE)
@@ -46,7 +47,8 @@
 #define BITFLAG_HOMING_ENABLE      bit(BIT_HOMING_ENABLE)
 #define BITFLAG_SOFT_LIMIT_ENABLE  bit(BIT_SOFT_LIMIT_ENABLE)
 #define BITFLAG_INVERT_LIMIT_PINS  bit(BIT_INVERT_LIMIT_PINS)
-#define BITFLAG_INVERT_PROBE_PIN   bit(BIT_INVERT_PROBE_PIN)
+// FIXME DO REUZYCIA
+#define BITFLAG_INVERT_PROBE_PIN_XXX   bit(BIT_INVERT_PROBE_PIN)
 
 // Define status reporting boolean enable bit flags in settings.status_report_mask
 #define BITFLAG_RT_STATUS_POSITION_TYPE     bit(0)
@@ -80,8 +82,11 @@
 
 // Define Grbl axis settings numbering scheme. Starts at START_VAL, every INCREMENT, over N_SETTINGS.
 #define AXIS_N_SETTINGS          4
+#define TOOL_N_SETTINGS          5
 #define AXIS_SETTINGS_START_VAL  100 // NOTE: Reserving settings values >= 100 for axis settings. Up to 255.
 #define AXIS_SETTINGS_INCREMENT  10  // Must be greater than the number of axis settings
+
+#define MAX_TOOL_NUMBER 4 // Limited by max unsigned 8-bit value
 
 // Global persistent settings (Stored from byte EEPROM_ADDR_GLOBAL onwards)
 typedef struct {
@@ -90,6 +95,7 @@ typedef struct {
   float max_rate[N_AXIS];
   float acceleration[N_AXIS];
   float max_travel[N_AXIS];
+  float tool_x_offset[MAX_TOOL_NUMBER];
 
   // Remaining Grbl settings
   uint8_t pulse_microseconds;

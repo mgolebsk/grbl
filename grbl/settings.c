@@ -42,8 +42,7 @@ const __flash settings_t defaults = {\
              (DEFAULT_HARD_LIMIT_ENABLE << BIT_HARD_LIMIT_ENABLE) | \
              (DEFAULT_HOMING_ENABLE << BIT_HOMING_ENABLE) | \
              (DEFAULT_SOFT_LIMIT_ENABLE << BIT_SOFT_LIMIT_ENABLE) | \
-             (DEFAULT_INVERT_LIMIT_PINS << BIT_INVERT_LIMIT_PINS) | \
-             (DEFAULT_INVERT_PROBE_PIN << BIT_INVERT_PROBE_PIN),
+             (DEFAULT_INVERT_LIMIT_PINS << BIT_INVERT_LIMIT_PINS),
     .steps_per_mm[X_AXIS] = DEFAULT_X_STEPS_PER_MM,
     .steps_per_mm[Y_AXIS] = DEFAULT_Y_STEPS_PER_MM,
     .steps_per_mm[Z_AXIS] = DEFAULT_Z_STEPS_PER_MM,
@@ -55,7 +54,11 @@ const __flash settings_t defaults = {\
     .acceleration[Z_AXIS] = DEFAULT_Z_ACCELERATION,
     .max_travel[X_AXIS] = (-DEFAULT_X_MAX_TRAVEL),
     .max_travel[Y_AXIS] = (-DEFAULT_Y_MAX_TRAVEL),
-    .max_travel[Z_AXIS] = (-DEFAULT_Z_MAX_TRAVEL)};
+    .max_travel[Z_AXIS] = (-DEFAULT_Z_MAX_TRAVEL),
+    .tool_x_offset[0] = DEFAULT_TOOL_X_OFFSET_0,
+    .tool_x_offset[1] = DEFAULT_TOOL_X_OFFSET_1,
+    .tool_x_offset[2] = DEFAULT_TOOL_X_OFFSET_2,
+    .tool_x_offset[MAX_TOOL_NUMBER-1] = DEFAULT_TOOL_X_OFFSET_3};
 
 
 // Method to store startup lines into EEPROM
@@ -194,33 +197,31 @@ uint8_t settings_store_global_setting(uint8_t parameter, float value) {
     // Store axis configuration. Axis numbering sequence set by AXIS_SETTING defines.
     // NOTE: Ensure the setting index corresponds to the report.c settings printout.
     parameter -= AXIS_SETTINGS_START_VAL;
-    uint8_t set_idx = 0;
-    while (set_idx < AXIS_N_SETTINGS) {
-      if (parameter < N_AXIS) {
-        // Valid axis setting found.
-        switch (set_idx) {
-          case 0:
-            #ifdef MAX_STEP_RATE_HZ
-              if (value*settings.max_rate[parameter] > (MAX_STEP_RATE_HZ*60.0)) { return(STATUS_MAX_STEP_RATE_EXCEEDED); }
-            #endif
-            settings.steps_per_mm[parameter] = value;
-            break;
-          case 1:
-            #ifdef MAX_STEP_RATE_HZ
-              if (value*settings.steps_per_mm[parameter] > (MAX_STEP_RATE_HZ*60.0)) {  return(STATUS_MAX_STEP_RATE_EXCEEDED); }
-            #endif
-            settings.max_rate[parameter] = value;
-            break;
-          case 2: settings.acceleration[parameter] = value*60*60; break; // Convert to mm/min^2 for grbl internal use.
-          case 3: settings.max_travel[parameter] = -value; break;  // Store as negative for grbl internal use.
-        }
-        break; // Exit while-loop after setting has been configured and proceed to the EEPROM write call.
-      } else {
-        set_idx++;
-        // If axis index greater than N_AXIS or setting index greater than number of axis settings, error out.
-        if ((parameter < AXIS_SETTINGS_INCREMENT) || (set_idx == AXIS_N_SETTINGS)) { return(STATUS_INVALID_STATEMENT); }
-        parameter -= AXIS_SETTINGS_INCREMENT;
-      }
+
+    uint8_t set_idx = parameter / AXIS_SETTINGS_INCREMENT;
+    parameter = parameter % AXIS_SETTINGS_INCREMENT;
+    if ((set_idx<AXIS_N_SETTINGS) && (parameter>=N_AXIS)) {
+      return(STATUS_INVALID_STATEMENT);
+    }
+    else if ((set_idx<TOOL_N_SETTINGS) && (parameter>=MAX_TOOL_NUMBER)) {
+      return(STATUS_INVALID_STATEMENT);
+    }
+    switch (set_idx) {
+      case 0:
+        #ifdef MAX_STEP_RATE_HZ
+          if (value*settings.max_rate[parameter] > (MAX_STEP_RATE_HZ*60.0)) { return(STATUS_MAX_STEP_RATE_EXCEEDED); }
+        #endif
+        settings.steps_per_mm[parameter] = value;
+        break;
+      case 1:
+        #ifdef MAX_STEP_RATE_HZ
+          if (value*settings.steps_per_mm[parameter] > (MAX_STEP_RATE_HZ*60.0)) {  return(STATUS_MAX_STEP_RATE_EXCEEDED); }
+        #endif
+        settings.max_rate[parameter] = value;
+        break;
+      case 2: settings.acceleration[parameter] = value*60*60; break; // Convert to mm/min^2 for grbl internal use.
+      case 3: settings.max_travel[parameter] = -value; break;  // Store as negative for grbl internal use.
+      case 4: settings.tool_x_offset[parameter] = value;  // Tool offset 140, 141, 142
     }
   } else {
     // Store non-axis Grbl settings
@@ -246,11 +247,12 @@ uint8_t settings_store_global_setting(uint8_t parameter, float value) {
         if (int_value) { settings.flags |= BITFLAG_INVERT_LIMIT_PINS; }
         else { settings.flags &= ~BITFLAG_INVERT_LIMIT_PINS; }
         break;
-      case 6: // Reset to ensure change. Immediate re-init may cause problems.
-        if (int_value) { settings.flags |= BITFLAG_INVERT_PROBE_PIN; }
-        else { settings.flags &= ~BITFLAG_INVERT_PROBE_PIN; }
-        probe_configure_invert_mask(false);
-        break;
+      // FIXME, NIE UZYWAMY TEGO USTAWIENIA  
+      // case 6: // Reset to ensure change. Immediate re-init may cause problems.
+      //   if (int_value) { settings.flags |= BITFLAG_INVERT_PROBE_PIN; }
+      //   else { settings.flags &= ~BITFLAG_INVERT_PROBE_PIN; }
+      //   probe_configure_invert_mask(false);
+      //   break;
       case 10: settings.status_report_mask = int_value; break;
       case 11: settings.junction_deviation = value; break;
       case 12: settings.arc_tolerance = value; break;
@@ -320,13 +322,4 @@ uint8_t get_direction_pin_mask(uint8_t axis_idx)
   if ( axis_idx == X_AXIS ) { return((1<<X_DIRECTION_BIT)); }
   if ( axis_idx == Y_AXIS ) { return((1<<Y_DIRECTION_BIT)); }
   return((1<<Z_DIRECTION_BIT));
-}
-
-
-// Returns limit pin mask according to Grbl internal axis indexing.
-uint8_t get_limit_pin_mask(uint8_t axis_idx)
-{
-  if ( axis_idx == X_AXIS ) { return((1<<X_LIMIT_BIT)); }
-  if ( axis_idx == Y_AXIS ) { return((1<<Y_LIMIT_BIT)); }
-  return((1<<Z_LIMIT_BIT));
 }

@@ -33,15 +33,16 @@
 #define EXEC_CYCLE_STOP     bit(2) // bitmask 00000100
 #define EXEC_FEED_HOLD      bit(3) // bitmask 00001000
 #define EXEC_RESET          bit(4) // bitmask 00010000
-#define EXEC_SAFETY_DOOR    bit(5) // bitmask 00100000
+#define EXEC_PAPER_LOAD     bit(5) // bitmask 00100000
 #define EXEC_MOTION_CANCEL  bit(6) // bitmask 01000000
 #define EXEC_SLEEP          bit(7) // bitmask 10000000
 
 #define EXEC_PEN_REQUEST_UP   bit(0) // bitmask 00000001
-#define EXEC_PEN_IS_UP        bit(1) // bitmask 00000010
+//#define EXEC_PEN_IS_UP        bit(1) // bitmask 00000010
 #define EXEC_PEN_REQUEST_DOWN bit(2) // bitmask 00000100
-#define EXEC_PEN_IS_DOWN      bit(3) // bitmask 00001000
-#define EXEC_PEN_REQUEST_MASK (EXEC_PEN_REQUEST_UP | EXEC_PEN_REQUEST_DOWN)
+//#define EXEC_PEN_IS_DOWN      bit(3) // bitmask 00001000
+#define EXEC_PEN_MOVE_FORCE   bit(4) // bitmask 00010000
+#define EXEC_PEN_REQUEST_MASK (EXEC_PEN_REQUEST_UP | EXEC_PEN_REQUEST_DOWN | EXEC_PEN_MOVE_FORCE)
 
 // Alarm executor codes. Valid values (1-255). Zero is reserved.
 #define EXEC_ALARM_HARD_LIMIT                 1
@@ -50,10 +51,11 @@
 #define EXEC_ALARM_PROBE_FAIL_INITIAL         4
 #define EXEC_ALARM_PROBE_FAIL_CONTACT         5
 #define EXEC_ALARM_HOMING_FAIL_RESET          6
-#define EXEC_ALARM_HOMING_FAIL_DOOR           7
+#define EXEC_ALARM_PEN_MOVE_FAIL              7
 #define EXEC_ALARM_HOMING_FAIL_PULLOFF        8
 #define EXEC_ALARM_HOMING_FAIL_APPROACH       9
 #define EXEC_ALARM_HOMING_FAIL_DUAL_APPROACH  10
+#define EXEC_ALARM_SOFT_LIMIT_PAGE            11
 
 // Override bit maps. Realtime bitflags to control feed, rapid, spindle, and coolant overrides.
 // Spindle/coolant and feed/rapids are separated into two controlling flag variables.
@@ -77,7 +79,8 @@
 #define STATE_CYCLE         bit(3) // Cycle is running or motions are being executed.
 #define STATE_HOLD          bit(4) // Active feed hold
 #define STATE_JOG           bit(5) // Jogging mode.
-#define STATE_SAFETY_DOOR   bit(6) // Safety door is ajar. Feed holds and de-energizes system.
+// FIX, DO REUZYCIA
+#define STATE_SAFETY_XXXX   bit(6) // Safety door is ajar. Feed holds and de-energizes system.
 #define STATE_SLEEP         bit(7) // Sleep state.
 
 // Define system suspend flags. Used in various ways to manage suspend states and procedures.
@@ -87,7 +90,8 @@
 #define SUSPEND_RETRACT_COMPLETE  bit(2) // (Safety door only) Indicates retraction and de-energizing is complete.
 #define SUSPEND_INITIATE_RESTORE  bit(3) // (Safety door only) Flag to initiate resume procedures from a cycle start.
 #define SUSPEND_RESTORE_COMPLETE  bit(4) // (Safety door only) Indicates ready to resume normal operation.
-#define SUSPEND_SAFETY_DOOR_AJAR  bit(5) // Tracks safety door state for resuming.
+// FIXME DO REUZYCIA 
+#define SUSPEND_SAFETY_DOOR_XXXX  bit(5) // Tracks safety door state for resuming.
 #define SUSPEND_MOTION_CANCEL     bit(6) // Indicates a canceled resume motion. Currently used by probing routine.
 #define SUSPEND_JOG_CANCEL        bit(7) // Indicates a jog cancel in process and to reset buffers when complete.
 
@@ -99,18 +103,11 @@
 #define STEP_CONTROL_UPDATE_SPINDLE_PWM   bit(3)
 
 // Define control pin index for Grbl internal use. Pin maps may change, but these values don't.
-#ifdef ENABLE_SAFETY_DOOR_INPUT_PIN
-  #define N_CONTROL_PIN 4
-  #define CONTROL_PIN_INDEX_SAFETY_DOOR   bit(0)
-  #define CONTROL_PIN_INDEX_RESET         bit(1)
-  #define CONTROL_PIN_INDEX_FEED_HOLD     bit(2)
-  #define CONTROL_PIN_INDEX_CYCLE_START   bit(3)
-#else
-  #define N_CONTROL_PIN 3
-  #define CONTROL_PIN_INDEX_RESET         bit(0)
-  #define CONTROL_PIN_INDEX_FEED_HOLD     bit(1)
-  #define CONTROL_PIN_INDEX_CYCLE_START   bit(2)
-#endif
+#define CONTROL_PIN_INDEX_RESET         bit(0)
+#define CONTROL_PIN_INDEX_FEED_HOLD     bit(1)
+#define CONTROL_PIN_INDEX_CYCLE_START   bit(2)
+#define CONTROL_PIN_INDEX_PAPER_LOAD    bit(3)
+#define CONTROL_PIN_INDEX_HOMING        bit(4)
 
 // Define global system variables
 typedef struct {
@@ -138,12 +135,16 @@ extern system_t sys;
 // NOTE: These position variables may need to be declared as volatiles, if problems arise.
 extern int32_t sys_position[N_AXIS];      // Real-time machine (aka home) position vector in steps.
 extern int32_t sys_probe_position[N_AXIS]; // Last probe position in machine coordinates and steps.
+extern uint8_t sys_tool;
 
 extern volatile uint8_t sys_probe_state;   // Probing state value.  Used to coordinate the probing cycle with stepper ISR.
 extern volatile uint8_t sys_rt_exec_state;   // Global realtime executor bitflag variable for state management. See EXEC bitmasks.
 extern volatile uint8_t sys_rt_exec_alarm;   // Global realtime executor bitflag variable for setting various alarms.
 extern volatile uint8_t sys_rt_exec_motion_override; // Global realtime executor bitflag variable for motion-based overrides.
 extern volatile uint8_t sys_rt_pen_motion;   // Global realtime pen state bitflag
+extern volatile uint8_t presed_control_pins;
+extern float paper_max_travel[N_AXIS_PAPER];
+extern float paper_min_travel[N_AXIS_PAPER];
 
 #ifdef DEBUG
   #define EXEC_DEBUG_REPORT  bit(0)
@@ -155,9 +156,6 @@ void system_init();
 
 // Returns bitfield of control pin states, organized by CONTROL_PIN_INDEX. (1=triggered, 0=not triggered).
 uint8_t system_control_get_state();
-
-// Returns if safety door is open or closed, based on pin state.
-uint8_t system_check_safety_door_ajar();
 
 // Executes an internal system command, defined as a string starting with a '$'
 uint8_t system_execute_line(char *line);

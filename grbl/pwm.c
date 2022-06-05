@@ -1,10 +1,10 @@
 
-#include "grbl.h"
+#include <Arduino.h>
 
+#include "grbl.h"
 
 // #include <Wire.h>
 // #include "PCA9685.h"
-#include <Arduino.h>
 
 // Library using default Wire and default linear phase balancing scheme
 // PCA9685 pwmController;                  
@@ -38,6 +38,9 @@ const float PEN_DOWN = 273;
 #define MIN_PEN_CHANNEL 12
 #define MAX_LED_CHANNEL 11
 #define MIN_LED_CHANNEL 0
+
+//#define LED_POWER 4096
+#define LED_POWER 512
 
 #define I2C_TIMEOUT 1000
 #define I2C_PULLUP 1
@@ -99,10 +102,12 @@ const float PEN_DOWN = 273;
 #define PCA9685_MODE_INVRT          (byte)0x10  // Enables channel output polarity inversion (applicable only when active-low-OE-pin=LOW)
 #define PCA9685_MODE_OUTDRV_TPOLE   (byte)0x04  // Enables totem-pole (instead of open-drain) style structure to be used for driving channel output, allowing use of an external output driver
 
+// The try requests number before pen move is reported as done by pin PEN_SENSOR
+uint16_t penRetryCounter = 0;
 
     void resetDevices() {
         if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printString("I2C device busy");
+            printPgmString(PSTR("I2C device busy"));
             // delay(1000);
             // return;
         }
@@ -149,7 +154,7 @@ const float PEN_DOWN = 273;
             regAddress = PCA9685_ALLLED_REG;
         }
         if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printString("I2C device busy");
+            printPgmString(PSTR("I2C device busy"));
             // delay(1000);
             // return;
         }
@@ -166,9 +171,7 @@ const float PEN_DOWN = 273;
 
     byte readRegister(byte regAddress) {
         if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printString("I2C device busy");
-            // delay(1000);
-            // return;
+            printPgmString(PSTR("I2C device busy"));
         }
         i2c_write(regAddress);
         i2c_rep_start((I2C_7BITADDR << 1) | I2C_READ);
@@ -195,7 +198,7 @@ const float PEN_DOWN = 273;
   
     void writeRegister(byte regAddress, byte value) {
         if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printString("I2C device busy");
+            printPgmString(PSTR("I2C device busy"));
             // delay(1000);
             // return;
         }
@@ -214,7 +217,7 @@ const float PEN_DOWN = 273;
     void pwm_init()
     {
         if (!i2c_init()) {
-            printString("I2C init failed");
+            printPgmString(PSTR("I2C init failed"));
         }
 
         // pwmController.resetDevices();       // Software resets all PCA9685 devices on Wire line
@@ -225,7 +228,9 @@ const float PEN_DOWN = 273;
         // pwmController.setPWMFrequency(50);  // Default is 200Hz, supports 24Hz to 1526Hz
         setPWMFrequency(50);
 
-        pinMode(LED_BUILTIN, OUTPUT);
+        // pinMode(A6, INPUT);
+        //    pinMode(LED_BUILTIN, OUTPUT);
+        // led(5, digitalRead(12)==HIGH);
 
     }
 
@@ -242,54 +247,56 @@ const float PEN_DOWN = 273;
         //     pwmController.setChannelPWM(i, 0);
             setChannelPWM(i, 0);
         }
+        penRetryCounter = 0;
+        sys_rt_pen_motion = 0;
+        sys_position[Z_AXIS] = settings.steps_per_mm[Z_AXIS];
+        gc_sync_position();
+        sys_tool = 0;
+        gc_state.tool = 0;
     }
 
-    void pen_move(byte tool, boolean up)
+    void pen_move(uint8_t tool, boolean up)
     {
     //    pwmController.setChannelPWM(MIN_PEN_CHANNEL+tool, up ? PEN_UP : PEN_DOWN);
        setChannelPWM(MIN_PEN_CHANNEL+tool, up ? PEN_UP : PEN_DOWN);
     }
 
-    void led(byte led, boolean on)
+    void led(uint8_t led, boolean on)
     {
         // pwmController.setChannelPWM(MIN_LED_CHANNEL+led, on ? 4096 : 0);
-        setChannelPWM(MIN_LED_CHANNEL+led, on ? 4096 : 0);
+        setChannelPWM(MIN_LED_CHANNEL+led, on ? LED_POWER : 0);
     }
-
-    void myDelay(int delayMilis) {
-        while(delayMilis-->0) {
-            delayMicroseconds(1000);
-        }
-    }
-
 
     void pen_rt_move() {
-        if(sys.state = STATE_ALARM) {
-
+        if (sys.state == STATE_ALARM) {
+            sys_rt_pen_motion = EXEC_PEN_REQUEST_UP | EXEC_PEN_MOVE_FORCE;
         }
-
-        if(sys_rt_pen_motion & EXEC_PEN_REQUEST_DOWN) {
-            // for(int i=0; i<5; i++) {
-            //     pen_move(i, false);
-            // }
-pen_move(0, false);
-
-led(4, false);
-digitalWrite(LED_BUILTIN, LOW);  
-
-           myDelay(1000);
-            sys_rt_pen_motion = EXEC_PEN_IS_DOWN;
+        if ((sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) && (++penRetryCounter>30000)) {
+            system_set_exec_alarm(EXEC_ALARM_PEN_MOVE_FAIL);
+            return;
         }
-        else if(sys_rt_pen_motion && EXEC_PEN_REQUEST_UP) {
-            // for(int i=0; i<5; i++) {
-            //     pen_move(i, true);
-            // }
-            pen_move(0, true);
-led(4, true);
-            digitalWrite(LED_BUILTIN, HIGH);
- 
-            myDelay(1000);
-            sys_rt_pen_motion = EXEC_PEN_IS_UP;
+        if (sys_rt_pen_motion & EXEC_PEN_REQUEST_UP) {
+            pen_move(sys_tool, true);
+            if (sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) {
+                if (!PEN_IS_DOWN) {
+                    sys_rt_pen_motion = 0;
+                    penRetryCounter = 0;
+                }
+            }
+        }
+        else if(sys_rt_pen_motion & EXEC_PEN_REQUEST_DOWN) {
+            pen_move(sys_tool, false);
+            if (sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) {
+                if (PEN_IS_DOWN) {
+                    sys_rt_pen_motion = 0;
+                    penRetryCounter = 0;
+                }
+            }
+        }
+        // no request, clear EXEC_PEN_MOVE_FORCE and set pen state
+        else {
+            sys_rt_pen_motion = 0;
+            penRetryCounter = 0;
         }
     }
 

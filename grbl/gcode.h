@@ -200,7 +200,7 @@ typedef struct {
   gc_modal_t modal;
 
   float feed_rate;              // Millimeters/min
-  uint8_t tool;                 // Tracks tool number. NOT USED.
+  uint8_t tool;                 // Tracks tool number
   int32_t line_number;          // Last line number sent
 
   float position[N_AXIS];       // Where the interpreter considers the tool to be at this point in the code

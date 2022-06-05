@@ -41,6 +41,7 @@
 #define PL_COND_FLAG_SYSTEM_MOTION     bit(1) // Single motion. Circumvents planner state. Used by home/park.
 #define PL_COND_FLAG_NO_FEED_OVERRIDE  bit(2) // Motion does not honor feed override.
 #define PL_COND_FLAG_INVERSE_TIME      bit(3) // Interprets feed rate value as inverse time when set.
+#define PL_COND_FLAG_PAPER_LOAD        bit(4) // Paper is loading, paper edge is being checked.
 #define PL_COND_MOTION_MASK    (PL_COND_FLAG_RAPID_MOTION|PL_COND_FLAG_SYSTEM_MOTION|PL_COND_FLAG_NO_FEED_OVERRIDE)
 #define PL_COND_SPINDLE_MASK   (PL_COND_FLAG_SPINDLE_CW|PL_COND_FLAG_SPINDLE_CCW)
 #define PL_COND_ACCESSORY_MASK (PL_COND_FLAG_SPINDLE_CW|PL_COND_FLAG_SPINDLE_CCW|PL_COND_FLAG_COOLANT_FLOOD|PL_COND_FLAG_COOLANT_MIST)
@@ -74,6 +75,7 @@ typedef struct {
   float max_junction_speed_sqr; // Junction entry speed limit based on direction vectors in (mm/min)^2
   float rapid_rate;             // Axis-limit adjusted maximum rate for this block direction in (mm/min)
   float programmed_rate;        // Programmed rate of this block (mm/min).
+  uint8_t tool;                 // Tool to perform this block
 } plan_block_t;
 
 

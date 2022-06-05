@@ -35,7 +35,7 @@ void mc_line(float *target, plan_line_data_t *pl_data)
   // from everywhere in Grbl.
   if (bit_istrue(settings.flags,BITFLAG_SOFT_LIMIT_ENABLE)) {
     // NOTE: Block jog state. Jogging is a special case and soft limits are handled independently.
-    if (sys.state != STATE_JOG) { limits_soft_check(target); }
+    if ((sys.state!=STATE_JOG) && !(pl_data->condition & PL_COND_FLAG_PAPER_LOAD)) { limits_soft_check(target); }
   }
 
   // If in check gcode mode, prevent motion by blocking planner. Soft limits still work.
@@ -201,7 +201,7 @@ void mc_homing_cycle(uint8_t cycle_mask)
   // with machines with limits wired on both ends of travel to one limit pin.
   // TODO: Move the pin-specific LIMIT_PIN call to limits.c as a function.
   #ifdef LIMITS_TWO_SWITCHES_ON_AXES
-    if (limits_get_state()) {
+    if (limit_get_state()) {
       mc_reset(); // Issue system reset and ensure spindle and coolant are shutdown.
       system_set_exec_alarm(EXEC_ALARM_HARD_LIMIT);
       return;
@@ -245,8 +245,7 @@ void mc_homing_cycle(uint8_t cycle_mask)
 
 // Perform tool length probe cycle. Requires probe switch.
 // NOTE: Upon probe failure, the program will be stopped and placed into ALARM state.
-uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_flags)
-{
+uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_flags, uint8_t probe_state) {
   // TODO: Need to update this cycle so it obeys a non-auto cycle start.
   if (sys.state == STATE_CHECK_MODE) { return(GC_PROBE_CHECK_MODE); }
 
@@ -255,17 +254,14 @@ uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_
   if (sys.abort) { return(GC_PROBE_ABORT); } // Return if system reset has been issued.
 
   // Initialize probing control variables
-  uint8_t is_probe_away = bit_istrue(parser_flags,GC_PARSER_PROBE_IS_AWAY);
   uint8_t is_no_error = bit_istrue(parser_flags,GC_PARSER_PROBE_IS_NO_ERROR);
   sys.probe_succeeded = false; // Re-initialize probe history before beginning cycle.
-  probe_configure_invert_mask(is_probe_away);
 
   // After syncing, check if probe is already triggered. If so, halt and issue alarm.
   // NOTE: This probe initialization error applies to all probing cycles.
   if ( probe_get_state() ) { // Check probe pin state.
     system_set_exec_alarm(EXEC_ALARM_PROBE_FAIL_INITIAL);
     protocol_execute_realtime();
-    probe_configure_invert_mask(false); // Re-initialize invert mask before returning.
     return(GC_PROBE_FAIL_INIT); // Nothing else to do but bail.
   }
 
@@ -273,7 +269,7 @@ uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_
   mc_line(target, pl_data);
 
   // Activate the probing state monitor in the stepper module.
-  sys_probe_state = PROBE_ACTIVE;
+  sys_probe_state = probe_state;
 
   // Perform probing cycle. Wait here until probe is triggered or motion completes.
   system_set_exec_state_flag(EXEC_CYCLE_START);
@@ -285,14 +281,17 @@ uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_
   // Probing cycle complete!
 
   // Set state variables and error out, if the probe failed and cycle with error is enabled.
-  if (sys_probe_state == PROBE_ACTIVE) {
-    if (is_no_error) { memcpy(sys_probe_position, sys_position, sizeof(sys_position)); }
-    else { system_set_exec_alarm(EXEC_ALARM_PROBE_FAIL_CONTACT); }
+  if (sys_probe_state) {
+    if (is_no_error) { 
+      memcpy(sys_probe_position, sys_position, sizeof(sys_position)); 
+    }
+    else { 
+      system_set_exec_alarm(EXEC_ALARM_PROBE_FAIL_CONTACT); 
+    }
   } else {
     sys.probe_succeeded = true; // Indicate to system the probing cycle completed successfully.
   }
   sys_probe_state = PROBE_OFF; // Ensure probe state monitor is disabled.
-  probe_configure_invert_mask(false); // Re-initialize invert mask.
   protocol_execute_realtime();   // Check and execute run-time commands
 
   // Reset the stepper and planner buffers to remove the remainder of the probe motion.
@@ -305,8 +304,12 @@ uint8_t mc_probe_cycle(float *target, plan_line_data_t *pl_data, uint8_t parser_
     report_probe_parameters();
   #endif
 
-  if (sys.probe_succeeded) { return(GC_PROBE_FOUND); } // Successful probe cycle.
-  else { return(GC_PROBE_FAIL_END); } // Failed to trigger probe within travel. With or without error.
+  if (sys.probe_succeeded) { 
+    return(GC_PROBE_FOUND); // Successful probe cycle.
+  } 
+  else { 
+    return(GC_PROBE_FAIL_END); // Failed to trigger probe within travel. With or without error.
+  } 
 }
 
 

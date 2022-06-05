@@ -61,6 +61,10 @@
   #define DEFAULT_HOMING_SEEK_RATE 500.0 // mm/min
   #define DEFAULT_HOMING_DEBOUNCE_DELAY 250 // msec (0-65k)
   #define DEFAULT_HOMING_PULLOFF 1.0 // mm
+  #define DEFAULT_TOOL_X_OFFSET_0 1.0 // mm 
+  #define DEFAULT_TOOL_X_OFFSET_1 2.0 // mm
+  #define DEFAULT_TOOL_X_OFFSET_2 3.0 // mm
+  #define DEFAULT_TOOL_X_OFFSET_3 4.0 // mm
 #endif
 
 #ifdef DEFAULTS_SHERLINE_5400
