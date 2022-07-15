@@ -44,52 +44,6 @@ static void report_util_axis_values(float *axis_value) {
   }
 }
 
-/*
-static void report_util_setting_string(uint8_t n) {
-  serial_write(' ');
-  serial_write('(');
-  switch(n) {
-    case 0: printPgmString(PSTR("stp pulse")); break;
-    case 1: printPgmString(PSTR("idl delay")); break; 
-    case 2: printPgmString(PSTR("stp inv")); break;
-    case 3: printPgmString(PSTR("dir inv")); break;
-    case 4: printPgmString(PSTR("stp en inv")); break;
-    case 5: printPgmString(PSTR("lim inv")); break;
-    case 6: printPgmString(PSTR("prb inv")); break;
-    case 10: printPgmString(PSTR("rpt")); break;
-    case 11: printPgmString(PSTR("jnc dev")); break;
-    case 12: printPgmString(PSTR("arc tol")); break;
-    case 13: printPgmString(PSTR("rpt inch")); break;
-    case 20: printPgmString(PSTR("sft lim")); break;
-    case 21: printPgmString(PSTR("hrd lim")); break;
-    case 22: printPgmString(PSTR("hm cyc")); break;
-    case 23: printPgmString(PSTR("hm dir inv")); break;
-    case 24: printPgmString(PSTR("hm feed")); break;
-    case 25: printPgmString(PSTR("hm seek")); break;
-    case 26: printPgmString(PSTR("hm delay")); break;
-    case 27: printPgmString(PSTR("hm pulloff")); break;
-    case 30: printPgmString(PSTR("rpm max")); break;
-    case 31: printPgmString(PSTR("rpm min")); break;
-    case 32: printPgmString(PSTR("laser")); break;
-    default:
-      n -= AXIS_SETTINGS_START_VAL;
-      uint8_t idx = 0;
-      while (n >= AXIS_SETTINGS_INCREMENT) {
-        n -= AXIS_SETTINGS_INCREMENT;
-        idx++;
-      }
-      serial_write(n+'x');
-      switch (idx) {
-        case 0: printPgmString(PSTR(":stp/mm")); break;
-        case 1: printPgmString(PSTR(":mm/min")); break;
-        case 2: printPgmString(PSTR(":mm/s^2")); break;
-        case 3: printPgmString(PSTR(":mm max")); break;
-      }
-      break;
-  }
-  report_util_comment_line_feed();
-}
-*/
 
 static void report_util_uint8_setting(uint8_t n, int val) { 
   report_util_setting_prefix(n); 
@@ -149,16 +103,12 @@ void report_feedback_message(uint8_t message_code)
       printPgmString(PSTR("Enabled")); break;
     case MESSAGE_DISABLED:
       printPgmString(PSTR("Disabled")); break;
-    case MESSAGE_SAFETY_DOOR_AJAR:
-      printPgmString(PSTR("Check Door")); break;
     case MESSAGE_CHECK_LIMITS:
       printPgmString(PSTR("Check Limits")); break;
     case MESSAGE_PROGRAM_END:
       printPgmString(PSTR("Pgm End")); break;
     case MESSAGE_RESTORE_DEFAULTS:
       printPgmString(PSTR("Restoring defaults")); break;
-    case MESSAGE_SPINDLE_RESTORE:
-      printPgmString(PSTR("Restoring spindle")); break;
     case MESSAGE_SLEEP_MODE:
       printPgmString(PSTR("Sleeping")); break;
   }
@@ -545,6 +495,7 @@ void report_realtime_status()
       printPgmString(PSTR("|WCO:"));
       report_util_axis_values(wco);
 
+      // section below can be commented out to save some program memory
       printPgmString(PSTR("|PG:"));
       for (idx=0; idx<N_AXIS_PAPER; idx++) {
         printFloat_CoordValue(paper_min_travel[idx]);

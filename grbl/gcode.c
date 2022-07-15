@@ -875,22 +875,27 @@ uint8_t gc_execute_line(char *line)
   // [5 & 6. Select tool & Change tool ]: Pen up -> move X axis -> Pen down 
 
   if (gc_state.tool != gc_block.values.t) {
-    uint8_t tmp_motion = gc_block.modal.motion;
-    uint8_t tmp_condition = pl_data->condition;
-    gc_block.modal.motion == MOTION_MODE_SEEK;
-    pl_data->condition |= PL_COND_FLAG_RAPID_MOTION; // Set rapid motion condition flag.
-    float tool_change[N_AXIS];
-    memcpy(tool_change, gc_state.position, N_AXIS*sizeof(float));
-    // Pen UP
-    tool_change[Z_AXIS] = 5;
-    mc_line(tool_change, pl_data);
-    // Change X position (new tool offset)
-    gc_state.tool = gc_block.values.t;
-    mc_line(tool_change, pl_data);
-    // Move to original position, but with new tool
-    mc_line(gc_state.position, pl_data);
-    pl_data->condition = tmp_condition;
-    gc_block.modal.motion = tmp_motion;
+    uint8_t condition = pl_data->condition;
+    pl_data->condition = (PL_COND_FLAG_SYSTEM_MOTION|PL_COND_FLAG_NO_FEED_OVERRIDE);
+    pl_data->feed_rate = settings.homing_seek_rate;
+    if(gc_state.position[Z_AXIS] > 0.0) {
+      gc_state.tool = gc_block.values.t;
+      mc_line(gc_state.position, pl_data);
+    }
+    else {
+      // protocol_buffer_synchronize();
+      float tool_change[N_AXIS];
+      memcpy(tool_change, gc_state.position, N_AXIS*sizeof(float));
+      // Pen UP
+      tool_change[Z_AXIS] = PEN_UP_POSITION;
+      mc_line(tool_change, pl_data);
+      // Change X position (new tool offset)
+      gc_state.tool = gc_block.values.t;
+      mc_line(tool_change, pl_data);
+      // Move to original position, but with new tool
+      mc_line(gc_state.position, pl_data);
+    }
+    pl_data->condition = condition;
   }
 
   // [9. Override control ]: NOT SUPPORTED. Always enabled. Except for a Grbl-only parking control.

@@ -182,7 +182,7 @@ void limits_go_home(uint8_t cycle_mask)
 
   // pen up
   system_convert_array_steps_to_mpos(target, sys_position);
-  target[Z_AXIS] = 10.0;
+  target[Z_AXIS] = PEN_UP_POSITION;
   plan_buffer_line(target, pl_data);
   protocol_buffer_synchronize();
 

@@ -6,17 +6,6 @@
 
 
 
-    // case NON_MODAL_SET_COORDINATE_OFFSET:
-    //   memcpy(gc_state.coord_offset,gc_block.values.xyz,sizeof(gc_block.values.xyz));
-    //   system_flag_wco_change();
-    //   break;
-
-// sys_probe_position
-
-// EXEC_MOTION_CANCEL
-
-// system_check_travel_limits
-
 static uint8_t busy;
 
 // Reset Paper Load subsystem.
@@ -59,8 +48,7 @@ void pl_cycle() {
   // 
   // 00 - pen up
   //
-
-  target[Z_AXIS] = 10.0;
+  target[Z_AXIS] = PEN_UP_POSITION;
   plan_buffer_line(target, &pl_data);
   protocol_buffer_synchronize();
 
@@ -130,10 +118,11 @@ void pl_cycle() {
   mc_probe_cycle(target, &pl_data, gc_parser_flags, PROBE_X_BEGIN);
 
   if(sys.probe_succeeded) {
-    paper_min_travel[X_AXIS] = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) - settings.tool_x_offset[sys_tool];
+    paper_min_travel[X_AXIS] = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) 
+      - settings.tool_x_offset[sys_tool];
   }
   else {
-    paper_min_travel[X_AXIS] =  - settings.homing_pulloff;
+    paper_min_travel[X_AXIS] = -settings.homing_pulloff;
     system_clear_exec_alarm(EXEC_ALARM_PROBE_FAIL_INITIAL);
   }
 
@@ -147,8 +136,10 @@ void pl_cycle() {
   mc_probe_cycle(target, &pl_data, gc_parser_flags, PROBE_X_END);
 
   if(sys.probe_succeeded) {
-    gc_state.coord_offset[X_AXIS] = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) - settings.tool_x_offset[sys_tool];
-    paper_max_travel[X_AXIS] = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) - settings.tool_x_offset[sys_tool];
+    float maxTravel = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) 
+      - settings.tool_x_offset[sys_tool];
+    gc_state.coord_offset[X_AXIS] = maxTravel;
+    paper_max_travel[X_AXIS] = maxTravel;
   }
   else {
     // just return, error is reported by mc_probe_cycle()
@@ -162,7 +153,7 @@ void pl_cycle() {
 
   // check size of the paper
   system_convert_array_steps_to_mpos(target,sys_position);
-  target[Y_AXIS] -= settings.max_travel[X_AXIS];
+  target[Y_AXIS] -= settings.max_travel[Y_AXIS];
   mc_probe_cycle(target, &pl_data, gc_parser_flags, PROBE_Y_END);
 
   if(sys.probe_succeeded) {

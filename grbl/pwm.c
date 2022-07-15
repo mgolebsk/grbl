@@ -32,7 +32,10 @@
 
 const float PEN_HORIZONTAL = 307;
 const float PEN_UP = 341;
+const float PEN_HALF_DOWN = 300;
 const float PEN_DOWN = 273;
+
+#define PEN_HALF_DOWN_DELAY 3
 
 #define MAX_PEN_CHANNEL 15
 #define MIN_PEN_CHANNEL 12
@@ -105,199 +108,197 @@ const float PEN_DOWN = 273;
 // The try requests number before pen move is reported as done by pin PEN_SENSOR
 uint16_t penRetryCounter = 0;
 
-    void resetDevices() {
-        if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printPgmString(PSTR("I2C device busy"));
-            // delay(1000);
-            // return;
-        }
-        i2c_write(PCA9685_SW_RESET);
-        i2c_stop();
+void printI2CisDeviceBusyOrFailed()
+{
+    // I2C device busy
+    printPgmString(PSTR("I2c0"));
+}
+
+void resetDevices() {
+    if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
+        printI2CisDeviceBusyOrFailed();
     }
+    i2c_write(PCA9685_SW_RESET);
+    i2c_stop();
+}
 
-    void getPhaseCycle(int channel, uint16_t pwmAmount, uint16_t *phaseBegin, uint16_t *phaseEnd) {
-        // Set delay
-        if (channel < 0) {
-            // All channels
-            *phaseBegin = 0;
-        }
-        else  {
-            // Distribute high phase area over entire phase range to balance load.
-            *phaseBegin = channel * (4096 / 16);
-        }
-        
-        // See datasheet section 7.3.3
-        if (pwmAmount == 0) {
-            // Full OFF => time_off[12] = 1;
-            *phaseEnd = PCA9685_PWM_FULL;
-        }
-        else if (pwmAmount >= PCA9685_PWM_FULL) {
-            // Full ON => time_on[12] = 1; time_off = ignored;
-            *phaseBegin |= PCA9685_PWM_FULL;
-            *phaseEnd = 0;
-        }
-        else {
-            *phaseEnd = *phaseBegin + pwmAmount;
-            if (*phaseEnd >= PCA9685_PWM_FULL)
-                *phaseEnd -= PCA9685_PWM_FULL;
+void getPhaseCycle(int channel, uint16_t pwmAmount, uint16_t *phaseBegin, uint16_t *phaseEnd) {
+    // Set delay
+    if (channel < 0) {
+        // All channels
+        *phaseBegin = 0;
+    }
+    else  {
+        // Distribute high phase area over entire phase range to balance load.
+        *phaseBegin = channel * (4096 / 16);
+    }
+    
+    // See datasheet section 7.3.3
+    if (pwmAmount == 0) {
+        // Full OFF => time_off[12] = 1;
+        *phaseEnd = PCA9685_PWM_FULL;
+    }
+    else if (pwmAmount >= PCA9685_PWM_FULL) {
+        // Full ON => time_on[12] = 1; time_off = ignored;
+        *phaseBegin |= PCA9685_PWM_FULL;
+        *phaseEnd = 0;
+    }
+    else {
+        *phaseEnd = *phaseBegin + pwmAmount;
+        if (*phaseEnd >= PCA9685_PWM_FULL) {
+            *phaseEnd -= PCA9685_PWM_FULL;
         }
     }
+}
 
-    void setChannelPWM(int channel, uint16_t pwmAmount) {
+void setChannelPWM(int channel, uint16_t pwmAmount) {
 
-        // writeChannelBegin(channel);
-        byte regAddress;
-        if (channel != -1) {
-            regAddress = PCA9685_LED0_REG + (channel * 0x04);
-        }
-        else {
-            regAddress = PCA9685_ALLLED_REG;
-        }
-        if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printPgmString(PSTR("I2C device busy"));
-            // delay(1000);
-            // return;
-        }
-        i2c_write(regAddress);
-
-        uint16_t phaseBegin, phaseEnd;
-        getPhaseCycle(channel, pwmAmount, &phaseBegin, &phaseEnd);
-        i2c_write(lowByte(phaseBegin));
-        i2c_write(highByte(phaseBegin));
-        i2c_write(lowByte(phaseEnd));
-        i2c_write(highByte(phaseEnd));
-        i2c_stop();  
+    // writeChannelBegin(channel);
+    byte regAddress;
+    if (channel != -1) {
+        regAddress = PCA9685_LED0_REG + (channel * 0x04);
     }
-
-    byte readRegister(byte regAddress) {
-        if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printPgmString(PSTR("I2C device busy"));
-        }
-        i2c_write(regAddress);
-        i2c_rep_start((I2C_7BITADDR << 1) | I2C_READ);
-        byte val = i2c_read(true);
-        i2c_stop();
-        return val;
+    else {
+        regAddress = PCA9685_ALLLED_REG;
     }
-
-    void setPWMFrequency(float pwmFrequency) {
-     if (pwmFrequency < 0) return;
-        // This equation comes from section 7.3.5 of the datasheet, but the rounding has been
-        // removed because it isn't needed. Lowest freq is 23.84, highest is 1525.88.
-        int preScalerVal = (25000000 / (4096 * pwmFrequency)) - 1;
-        if (preScalerVal > 255) preScalerVal = 255;
-        if (preScalerVal < 3) preScalerVal = 3;
-        // The PRE_SCALE register can only be set when the SLEEP bit of MODE1 register is set to logic 1.
-        byte mode1Reg = readRegister(PCA9685_MODE1_REG);
-        writeRegister(PCA9685_MODE1_REG, (mode1Reg = (mode1Reg & ~PCA9685_MODE_RESTART) | PCA9685_MODE_SLEEP));
-        writeRegister(PCA9685_PRESCALE_REG, (byte)preScalerVal);
-        // It takes 500us max for the oscillator to be up and running once SLEEP bit has been set to logic 0.
-        writeRegister(PCA9685_MODE1_REG, (mode1Reg = (mode1Reg & ~PCA9685_MODE_SLEEP) | PCA9685_MODE_RESTART));
-        delayMicroseconds(500);
+    if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
+        printI2CisDeviceBusyOrFailed();
     }
-  
-    void writeRegister(byte regAddress, byte value) {
-        if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
-            printPgmString(PSTR("I2C device busy"));
-            // delay(1000);
-            // return;
-        }
-        i2c_write(regAddress);
-        i2c_write(value);
-        i2c_stop();  
-    } 
+    i2c_write(regAddress);
 
-    pwmControlerInit() {
-        // pwmController.init(B000000);        // Address pins A5-A0 set to B010101, default mode settings
-        writeRegister(PCA9685_MODE1_REG, PCA9685_MODE_RESTART | PCA9685_MODE_AUTOINC);
-        writeRegister(PCA9685_MODE2_REG, PCA9685_MODE_OUTDRV_TPOLE);
+    uint16_t phaseBegin, phaseEnd;
+    getPhaseCycle(channel, pwmAmount, &phaseBegin, &phaseEnd);
+    i2c_write(lowByte(phaseBegin));
+    i2c_write(highByte(phaseBegin));
+    i2c_write(lowByte(phaseEnd));
+    i2c_write(highByte(phaseEnd));
+    i2c_stop();  
+}
+
+byte readRegister(byte regAddress) {
+    if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
+        printI2CisDeviceBusyOrFailed();
     }
+    i2c_write(regAddress);
+    i2c_rep_start((I2C_7BITADDR << 1) | I2C_READ);
+    byte val = i2c_read(true);
+    i2c_stop();
+    return val;
+}
 
+void setPWMFrequency(float pwmFrequency) {
+    if (pwmFrequency < 0) return;
+    // This equation comes from section 7.3.5 of the datasheet, but the rounding has been
+    // removed because it isn't needed. Lowest freq is 23.84, highest is 1525.88.
+    int preScalerVal = (25000000 / (4096 * pwmFrequency)) - 1;
+    if (preScalerVal > 255) preScalerVal = 255;
+    if (preScalerVal < 3) preScalerVal = 3;
+    // The PRE_SCALE register can only be set when the SLEEP bit of MODE1 register is set to logic 1.
+    byte mode1Reg = readRegister(PCA9685_MODE1_REG);
+    writeRegister(PCA9685_MODE1_REG, (mode1Reg = (mode1Reg & ~PCA9685_MODE_RESTART) | PCA9685_MODE_SLEEP));
+    writeRegister(PCA9685_PRESCALE_REG, (byte)preScalerVal);
+    // It takes 500us max for the oscillator to be up and running once SLEEP bit has been set to logic 0.
+    writeRegister(PCA9685_MODE1_REG, (mode1Reg = (mode1Reg & ~PCA9685_MODE_SLEEP) | PCA9685_MODE_RESTART));
+    delayMicroseconds(500);
+}
 
-    void pwm_init()
+void writeRegister(byte regAddress, byte value) {
+    if (!i2c_start((I2C_7BITADDR << 1) | I2C_WRITE)) {
+        printI2CisDeviceBusyOrFailed();
+    }
+    i2c_write(regAddress);
+    i2c_write(value);
+    i2c_stop();  
+} 
+
+pwmControlerInit() {
+    // Address pins A5-A0 set to B010101, default mode settings
+    writeRegister(PCA9685_MODE1_REG, PCA9685_MODE_RESTART | PCA9685_MODE_AUTOINC);
+    writeRegister(PCA9685_MODE2_REG, PCA9685_MODE_OUTDRV_TPOLE);
+}
+
+void pwm_init()
+{
+    if (!i2c_init()) {
+        // I2C init failed
+        printI2CisDeviceBusyOrFailed();
+    }
+    resetDevices(); // Software resets all PCA9685 devices on Wire line
+    pwmControlerInit();
+    setPWMFrequency(50); // Default is 200Hz, supports 24Hz to 1526Hz
+}
+
+void pwm_reset()
+{
+    for(int i=MIN_PEN_CHANNEL; i<=MAX_PEN_CHANNEL; i++)
     {
-        if (!i2c_init()) {
-            printPgmString(PSTR("I2C init failed"));
-        }
-
-        // pwmController.resetDevices();       // Software resets all PCA9685 devices on Wire line
-        resetDevices();
-
-        pwmControlerInit();
-        
-        // pwmController.setPWMFrequency(50);  // Default is 200Hz, supports 24Hz to 1526Hz
-        setPWMFrequency(50);
-
-        // pinMode(A6, INPUT);
-        //    pinMode(LED_BUILTIN, OUTPUT);
-        // led(5, digitalRead(12)==HIGH);
-
+        setChannelPWM(i, PEN_UP);
     }
 
-    void pwm_reset()
+    for(int i=MIN_LED_CHANNEL; i<=MAX_LED_CHANNEL; i++)
     {
-        for(int i=MIN_PEN_CHANNEL; i<=MAX_PEN_CHANNEL; i++)
-        {
-        //     pwmController.setChannelPWM(i, PEN_UP);
-            setChannelPWM(i, PEN_UP);
-        }
+        setChannelPWM(i, 0);
+    }
+    penRetryCounter = 0;
+    sys_rt_pen_motion = 0;
+    sys_position[Z_AXIS] = settings.steps_per_mm[Z_AXIS];
+    gc_sync_position();
+    sys_tool = 0;
+    gc_state.tool = 0;
+}
 
-        for(int i=MIN_LED_CHANNEL; i<=MAX_LED_CHANNEL; i++)
-        {
-        //     pwmController.setChannelPWM(i, 0);
-            setChannelPWM(i, 0);
-        }
-        penRetryCounter = 0;
+void pen_move(uint8_t tool, boolean up)
+{
+    uint8_t toolChannel = MIN_PEN_CHANNEL+tool;
+    if(up) {
+        setChannelPWM(toolChannel, PEN_UP);
+    }
+    else {
+        // to protect pen
+        setChannelPWM(toolChannel, PEN_HALF_DOWN);
+        delay_ms(PEN_HALF_DOWN_DELAY);
+        setChannelPWM(toolChannel, PEN_DOWN);
+    }
+}
+
+void led(uint8_t led, boolean on)
+{
+    setChannelPWM(MIN_LED_CHANNEL+led, on ? LED_POWER : 0);
+}
+
+void pen_rt_move() {
+    if (sys.state == STATE_ALARM) {
+        sys_rt_pen_motion = EXEC_PEN_REQUEST_UP | EXEC_PEN_MOVE_FORCE;
+    }
+    if (sys_rt_pen_motion && (++penRetryCounter>2000)) {
+        // When pen is stuck, then enter hold mode, to allow user manualy pull it donw and continue
+        system_set_exec_state_flag(EXEC_FEED_HOLD); 
         sys_rt_pen_motion = 0;
-        sys_position[Z_AXIS] = settings.steps_per_mm[Z_AXIS];
-        gc_sync_position();
-        sys_tool = 0;
-        gc_state.tool = 0;
+        penRetryCounter = 0;
+        return;
     }
 
-    void pen_move(uint8_t tool, boolean up)
-    {
-    //    pwmController.setChannelPWM(MIN_PEN_CHANNEL+tool, up ? PEN_UP : PEN_DOWN);
-       setChannelPWM(MIN_PEN_CHANNEL+tool, up ? PEN_UP : PEN_DOWN);
-    }
-
-    void led(uint8_t led, boolean on)
-    {
-        // pwmController.setChannelPWM(MIN_LED_CHANNEL+led, on ? 4096 : 0);
-        setChannelPWM(MIN_LED_CHANNEL+led, on ? LED_POWER : 0);
-    }
-
-    void pen_rt_move() {
-        if (sys.state == STATE_ALARM) {
-            sys_rt_pen_motion = EXEC_PEN_REQUEST_UP | EXEC_PEN_MOVE_FORCE;
-        }
-        if ((sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) && (++penRetryCounter>30000)) {
-            system_set_exec_alarm(EXEC_ALARM_PEN_MOVE_FAIL);
-            return;
-        }
-        if (sys_rt_pen_motion & EXEC_PEN_REQUEST_UP) {
+    if (sys_rt_pen_motion & EXEC_PEN_REQUEST_UP) {
+        if (PEN_IS_DOWN) {
             pen_move(sys_tool, true);
-            if (sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) {
-                if (!PEN_IS_DOWN) {
-                    sys_rt_pen_motion = 0;
-                    penRetryCounter = 0;
-                }
-            }
         }
-        else if(sys_rt_pen_motion & EXEC_PEN_REQUEST_DOWN) {
-            pen_move(sys_tool, false);
-            if (sys_rt_pen_motion & EXEC_PEN_MOVE_FORCE) {
-                if (PEN_IS_DOWN) {
-                    sys_rt_pen_motion = 0;
-                    penRetryCounter = 0;
-                }
-            }
-        }
-        // no request, clear EXEC_PEN_MOVE_FORCE and set pen state
         else {
             sys_rt_pen_motion = 0;
             penRetryCounter = 0;
         }
     }
-
-    
+    else if(sys_rt_pen_motion & EXEC_PEN_REQUEST_DOWN) {
+        if (!PEN_IS_DOWN) {
+            pen_move(sys_tool, false);
+        }
+        else {
+            sys_rt_pen_motion = 0;
+            penRetryCounter = 0;
+        }
+    }
+    // no request, clear pen state
+    else {
+        sys_rt_pen_motion = 0;
+        penRetryCounter = 0;
+    }
+}

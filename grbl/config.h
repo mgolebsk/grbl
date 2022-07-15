@@ -485,15 +485,12 @@
 // NOTE: Still a work-in-progress. Machine coordinates must be in all negative space and
 // does not work with HOMING_FORCE_SET_ORIGIN enabled. Parking motion also moves only in
 // positive direction.
-// #define PARKING_ENABLE  // Default disabled. Uncomment to enable
+#define PARKING_ENABLE  // Default disabled. Uncomment to enable
 
 // Configure options for the parking motion, if enabled.
-#define PARKING_AXIS Z_AXIS // Define which axis that performs the parking motion
-#define PARKING_TARGET -5.0 // Parking axis target. In mm, as machine coordinate [-max_travel,0].
-#define PARKING_RATE 500.0 // Parking fast rate after pull-out in mm/min.
+#define PARKING_AXIS X_AXIS // Define which axis that performs the parking motion
 #define PARKING_PULLOUT_RATE 100.0 // Pull-out/plunge slow feed rate in mm/min.
-#define PARKING_PULLOUT_INCREMENT 5.0 // Spindle pull-out and plunge distance in mm. Incremental distance.
-                                      // Must be positive value or equal to zero.
+#define PARKING_X_POS 15
 
 // Enables a special set of M-code commands that enables and disables the parking motion. 
 // These are controlled by `M56`, `M56 P1`, or `M56 Px` to enable and `M56 P0` to disable. 

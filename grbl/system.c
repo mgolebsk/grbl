@@ -93,8 +93,7 @@ ISR(CONTROL_INT_vect)
 // Executes user startup script, if stored.
 void system_execute_startup(char *line)
 {
-  uint8_t n;
-  for (n=0; n < N_STARTUP_LINE; n++) {
+  for (uint8_t n=0; n < N_STARTUP_LINE; n++) {
     if (!(settings_read_startup_line(n, line))) {
       line[0] = 0;
       report_execute_startup_message(line,STATUS_SETTING_READ_FAIL);
@@ -269,7 +268,6 @@ uint8_t system_execute_line(char *line)
 }
 
 
-
 void system_flag_wco_change()
 {
   #ifdef FORCE_BUFFER_SYNC_DURING_WCO_CHANGE
@@ -284,17 +282,17 @@ void system_flag_wco_change()
 //   serves as a central place to compute the transformation.
 float system_convert_axis_steps_to_mpos(int32_t *steps, uint8_t idx)
 {
+  float result = steps[idx]/settings.steps_per_mm[idx];
   if(idx == X_AXIS) {
-    return steps[idx]/settings.steps_per_mm[idx] + settings.tool_x_offset[sys_tool];
+    return result + settings.tool_x_offset[sys_tool];
   }
-  return steps[idx]/settings.steps_per_mm[idx];
+  return result;
 }
 
 
 void system_convert_array_steps_to_mpos(float *position, int32_t *steps)
 {
-  uint8_t idx;
-  for (idx=0; idx<N_AXIS; idx++) {
+  for (uint8_t idx=0; idx<N_AXIS; idx++) {
     position[idx] = system_convert_axis_steps_to_mpos(steps, idx);
   }
   return;

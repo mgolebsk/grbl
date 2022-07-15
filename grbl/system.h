@@ -42,7 +42,6 @@
 #define EXEC_PEN_REQUEST_DOWN bit(2) // bitmask 00000100
 //#define EXEC_PEN_IS_DOWN      bit(3) // bitmask 00001000
 #define EXEC_PEN_MOVE_FORCE   bit(4) // bitmask 00010000
-#define EXEC_PEN_REQUEST_MASK (EXEC_PEN_REQUEST_UP | EXEC_PEN_REQUEST_DOWN | EXEC_PEN_MOVE_FORCE)
 
 // Alarm executor codes. Valid values (1-255). Zero is reserved.
 #define EXEC_ALARM_HARD_LIMIT                 1
@@ -80,7 +79,7 @@
 #define STATE_HOLD          bit(4) // Active feed hold
 #define STATE_JOG           bit(5) // Jogging mode.
 // FIX, DO REUZYCIA
-#define STATE_SAFETY_XXXX   bit(6) // Safety door is ajar. Feed holds and de-energizes system.
+#define STATE_SAFETY_XXXX   bit(6) // Can be reuse.
 #define STATE_SLEEP         bit(7) // Sleep state.
 
 // Define system suspend flags. Used in various ways to manage suspend states and procedures.

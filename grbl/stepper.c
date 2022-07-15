@@ -351,14 +351,6 @@ ISR(TIMER1_COMPA_vect)
       st.exec_segment = &segment_buffer[segment_buffer_tail];
       sys_tool = st.exec_segment->tool;
 
-      #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-        // With AMASS is disabled, set timer prescaler for segments with slow step frequencies (< 250Hz).
-        TCCR1B = (TCCR1B & ~(0x07<<CS10)) | (st.exec_segment->prescaler<<CS10);
-      #endif
-
-      // Initialize step segment timing per step and load number of steps to execute.
-      OCR1A = st.exec_segment->cycles_per_tick;
-      st.step_count = st.exec_segment->n_step; // NOTE: Can sometimes be zero when moving slow.
       // If the new segment starts a new planner block, initialize stepper variables and counters.
       // NOTE: When the segment data index changes, this indicates a new planner block.
       if ( st.exec_block_index != st.exec_segment->st_block_index ) {
@@ -368,6 +360,42 @@ ISR(TIMER1_COMPA_vect)
         // Initialize Bresenham line and distance counters
         st.counter_x = st.counter_y = st.counter_z = (st.exec_block->step_event_count >> 1);
       }
+
+      // Z move in one step, don't care depth, enough 0=>pen_down, 10=>pen_up
+      if((st.exec_block->steps[X_AXIS]==0) && (st.exec_block->steps[Y_AXIS]==0) && (st.exec_block->steps[Z_AXIS]>0)) {
+        if ((st.exec_block->direction_bits^dir_port_invert_mask) & (1<<Z_DIRECTION_BIT)) { 
+          // sys_rt_pen_motion = EXEC_PEN_REQUEST_DOWN;
+          sys_position[Z_AXIS] -= st.exec_block->steps[Z_AXIS];
+        }
+        else { 
+          // sys_rt_pen_motion = EXEC_PEN_REQUEST_UP;
+          sys_position[Z_AXIS] += st.exec_block->steps[Z_AXIS];
+        }
+        if(sys_position[Z_AXIS] > 0) {
+          // stop stepers to precise move pen
+          sys_rt_pen_motion = (EXEC_PEN_REQUEST_UP | EXEC_PEN_MOVE_FORCE);
+        }
+        else {
+          // stop stepers to precise move pen
+          sys_rt_pen_motion = (EXEC_PEN_REQUEST_DOWN | EXEC_PEN_MOVE_FORCE);
+        }
+
+        // Segment is complete. Discard current segment and advance segment indexing.
+        st.exec_segment = NULL;
+        if ( ++segment_buffer_tail == SEGMENT_BUFFER_SIZE) { segment_buffer_tail = 0; }
+        busy = false;
+        return;
+      }
+
+
+      #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
+        // With AMASS is disabled, set timer prescaler for segments with slow step frequencies (< 250Hz).
+        TCCR1B = (TCCR1B & ~(0x07<<CS10)) | (st.exec_segment->prescaler<<CS10);
+      #endif
+
+      // Initialize step segment timing per step and load number of steps to execute.
+      OCR1A = st.exec_segment->cycles_per_tick;
+      st.step_count = st.exec_segment->n_step; // NOTE: Can sometimes be zero when moving slow.
       st.dir_outbits = st.exec_block->direction_bits ^ dir_port_invert_mask;
       #ifdef ENABLE_DUAL_AXIS
         st.dir_outbits_dual = st.exec_block->direction_bits_dual ^ dir_port_invert_mask_dual;
@@ -398,6 +426,7 @@ ISR(TIMER1_COMPA_vect)
     st.step_outbits_dual = 0;
   #endif
 
+
   // Execute step displacement profile by Bresenham line algorithm
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
     st.counter_x += st.steps[X_AXIS];
@@ -410,8 +439,12 @@ ISR(TIMER1_COMPA_vect)
       st.step_outbits_dual = (1<<DUAL_STEP_BIT);
     #endif
     st.counter_x -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & (1<<X_DIRECTION_BIT)) { sys_position[X_AXIS]--; }
-    else { sys_position[X_AXIS]++; }
+    if (st.exec_block->direction_bits & (1<<X_DIRECTION_BIT)) { 
+      sys_position[X_AXIS]--; 
+    }
+    else { 
+      sys_position[X_AXIS]++; 
+    }
   }
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
     st.counter_y += st.steps[Y_AXIS];
@@ -424,46 +457,34 @@ ISR(TIMER1_COMPA_vect)
       st.step_outbits_dual = (1<<DUAL_STEP_BIT);
     #endif
     st.counter_y -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & (1<<Y_DIRECTION_BIT)) { sys_position[Y_AXIS]--; }
-    else { sys_position[Y_AXIS]++; }
-  }
-  #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-    st.counter_z += st.steps[Z_AXIS];
-  #else
-    st.counter_z += st.exec_block->steps[Z_AXIS];
-  #endif
-  if (st.counter_z > st.exec_block->step_event_count) {
-    // Z move in one step, don't care depth, enough 0=>pen_down, 10=>pen_up
-    if((st.exec_block->steps[X_AXIS]==0) && (st.exec_block->steps[Y_AXIS]==0)) {
-      //st.counter_z = 0;
-      if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
-        sys_position[Z_AXIS] = 0;
-      }
-      else { 
-        sys_position[Z_AXIS] = 10;
-      }
-      st.step_count = 1;
-      // stop stepers to precise move pen
-      sys_rt_pen_motion |= EXEC_PEN_MOVE_FORCE;
+    if (st.exec_block->direction_bits & (1<<Y_DIRECTION_BIT)) { 
+      sys_position[Y_AXIS]--; 
     }
-    else {
-      st.step_outbits |= (1<<Z_STEP_BIT);
-      st.counter_z -= st.exec_block->step_event_count;
-      if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
-        sys_position[Z_AXIS]--; 
-      }
-      else { 
-        sys_position[Z_AXIS]++; 
-      }
-    }
-    if (sys_position[Z_AXIS]>0) {
-      sys_rt_pen_motion |= EXEC_PEN_REQUEST_UP;
-    }
-    else if (sys_position[Z_AXIS]<=0) {
-      sys_rt_pen_motion |= EXEC_PEN_REQUEST_DOWN;
+    else { 
+      sys_position[Y_AXIS]++; 
     }
   }
-
+  // #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
+  //   st.counter_z += st.steps[Z_AXIS];
+  // #else
+  //   st.counter_z += st.exec_block->steps[Z_AXIS];
+  // #endif
+  // if (st.counter_z > st.exec_block->step_event_count) {
+  //   st.step_outbits |= (1<<Z_STEP_BIT);
+  //   st.counter_z -= st.exec_block->step_event_count;
+  //   if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
+  //     if (sys_position[Z_AXIS]==0) {
+  //       sys_rt_pen_motion |= EXEC_PEN_REQUEST_DOWN;
+  //     }
+  //     sys_position[Z_AXIS]--; 
+  //   }
+  //   else { 
+  //     if (sys_position[Z_AXIS]==0) {
+  //       sys_rt_pen_motion |= EXEC_PEN_REQUEST_UP;
+  //     }
+  //     sys_position[Z_AXIS]++; 
+  //   }
+  // }
 
   // During a homing cycle, lock out and prevent desired axes from moving.
   if (sys.state == STATE_HOMING) { 
@@ -686,9 +707,16 @@ void st_prep_buffer()
     if (pl_block == NULL) {
 
       // Query planner for a queued block
-      if (sys.step_control & STEP_CONTROL_EXECUTE_SYS_MOTION) { pl_block = plan_get_system_motion_block(); }
-      else { pl_block = plan_get_current_block(); }
-      if (pl_block == NULL) { return; } // No planner blocks. Exit.
+      if (sys.step_control & STEP_CONTROL_EXECUTE_SYS_MOTION) { 
+        pl_block = plan_get_system_motion_block(); 
+      }
+      else { 
+        pl_block = plan_get_current_block(); 
+      }
+      // No planner blocks. Exit.
+      if (pl_block == NULL) { 
+        return; 
+      } 
 
       // Check if we need to only recompute the velocity profile or load a new block.
       if (prep.recalculate_flag & PREP_FLAG_RECALCULATE) {
@@ -701,6 +729,58 @@ void st_prep_buffer()
         #endif
 
       } else {
+
+        if(pl_block->steps[X_AXIS]==0 && pl_block->steps[Y_AXIS]==0) {
+          uint32_t z_steps = pl_block->steps[Z_AXIS];
+          uint8_t direction_bits = pl_block->direction_bits;
+          uint8_t tool = pl_block->tool;
+          pl_block = NULL;
+          if(!(sys.step_control&STEP_CONTROL_EXECUTE_SYS_MOTION)) {
+            // current block is pen motion block, so we handle it in simplified way
+            plan_discard_current_block();
+            // get next block anch check if this is oposite pen direction
+            pl_block = plan_get_current_block(); 
+          }
+          // check if this is simple oposite direction block, so skip those 2 moves
+          if(pl_block!=NULL && pl_block->steps[X_AXIS]==0 && pl_block->steps[Y_AXIS]==0 
+            && z_steps==pl_block->steps[Z_AXIS] && tool==pl_block->tool
+            && (direction_bits & (1<<Z_DIRECTION_BIT))!=(pl_block->direction_bits & (1<<Z_DIRECTION_BIT))){
+
+            pl_block = NULL; // Set pointer to indicate check and load next planner block.
+            plan_discard_current_block();
+          }
+          // this is single pen move, we insert simple single segment and block
+          else {
+            // proces previous planer block
+            prep.st_block_index = st_next_block_index(prep.st_block_index);
+            st_prep_block = &st_block_buffer[prep.st_block_index];
+            st_prep_block->direction_bits = direction_bits;
+            st_prep_block->steps[X_AXIS] = 0;
+            st_prep_block->steps[Y_AXIS] = 0;
+            st_prep_block->steps[Z_AXIS] = z_steps;
+            st_prep_block->step_event_count = z_steps;
+
+            // Initialize new segment
+            segment_t *prep_segment = &segment_buffer[segment_buffer_head];
+
+            // Set new segment to point to the current segment data block.
+            prep_segment->st_block_index = prep.st_block_index;
+            prep_segment->tool = tool;
+            // just one step to execute
+            prep_segment->n_step = 1;
+            // Segment complete! Increment segment buffer indices, so stepper ISR can immediately execute it.
+            segment_buffer_head = segment_next_head;
+            if ( ++segment_next_head == SEGMENT_BUFFER_SIZE ) { segment_next_head = 0; }
+            // let proces current planner bloc to be processed in ordinary way (no "continue" statment here)
+            // The planner block is complete. All steps are set to be executed in the segment buffer.
+            pl_block = NULL;
+            if (sys.step_control & STEP_CONTROL_EXECUTE_SYS_MOTION) {
+              bit_true(sys.step_control,STEP_CONTROL_END_MOTION);
+              return;
+            }
+          }
+          continue;
+        }
 
         // Load the Bresenham stepping data for the block.
         prep.st_block_index = st_next_block_index(prep.st_block_index);

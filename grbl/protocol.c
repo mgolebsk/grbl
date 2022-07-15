@@ -237,7 +237,7 @@ void protocol_exec_rt_system()
     system_clear_exec_alarm(); // Clear alarm
   }
 
-  if(sys_rt_pen_motion & EXEC_PEN_REQUEST_MASK) {
+  if(sys_rt_pen_motion || sys.state==STATE_ALARM) {
     pen_rt_move();
   }
 
@@ -329,16 +329,21 @@ void protocol_exec_rt_system()
       if (!(rt_exec & (EXEC_FEED_HOLD | EXEC_MOTION_CANCEL))) {
         // Cycle start only when IDLE or when a hold is complete and ready to resume.
         if ((sys.state == STATE_IDLE) || ((sys.state & STATE_HOLD) && (sys.suspend & SUSPEND_HOLD_COMPLETE))) {
-          // Start cycle only if queued motions exist in planner buffer and the motion is not canceled.
-          sys.step_control = STEP_CONTROL_NORMAL_OP; // Restore step control to normal operation
-          if (plan_get_current_block() && bit_isfalse(sys.suspend,SUSPEND_MOTION_CANCEL)) {
-            sys.suspend = SUSPEND_DISABLE; // Break suspend state.
-            sys.state = STATE_CYCLE;
-            st_prep_buffer(); // Initialize step segment buffer before beginning cycle.
-            st_wake_up();
-          } else { // Otherwise, do nothing. Set and resume IDLE state.
-            sys.suspend = SUSPEND_DISABLE; // Break suspend state.
-            sys.state = STATE_IDLE;
+          if(sys.suspend && bit_isfalse(sys.suspend,SUSPEND_RESTORE_COMPLETE)) {
+            sys.suspend |= SUSPEND_INITIATE_RESTORE;
+          }
+          else {
+            // Start cycle only if queued motions exist in planner buffer and the motion is not canceled.
+            sys.step_control = STEP_CONTROL_NORMAL_OP; // Restore step control to normal operation
+            if (plan_get_current_block() && bit_isfalse(sys.suspend,SUSPEND_MOTION_CANCEL)) {
+              sys.suspend = SUSPEND_DISABLE; // Break suspend state.
+              sys.state = STATE_CYCLE;
+              st_prep_buffer(); // Initialize step segment buffer before beginning cycle.
+              st_wake_up();
+            } else { // Otherwise, do nothing. Set and resume IDLE state.
+              sys.suspend = SUSPEND_DISABLE; // Break suspend state.
+              sys.state = STATE_IDLE;
+            }
           }
         }
       }
@@ -428,15 +433,23 @@ static void protocol_exec_rt_suspend()
     // Declare and initialize parking local variables
     float restore_target[N_AXIS];
     float parking_target[N_AXIS];
-    float retract_waypoint = PARKING_PULLOUT_INCREMENT;
+    float pen_position;
     plan_line_data_t plan_data;
     plan_line_data_t *pl_data = &plan_data;
     memset(pl_data,0,sizeof(plan_line_data_t));
     pl_data->condition = (PL_COND_FLAG_SYSTEM_MOTION|PL_COND_FLAG_NO_FEED_OVERRIDE);
+    pl_data->feed_rate = settings.homing_seek_rate;
     #ifdef USE_LINE_NUMBERS
       pl_data->line_number = PARKING_MOTION_LINE_NUMBER;
     #endif
   #endif
+
+  plan_block_t *block = plan_get_current_block(); 
+  uint8_t restore_condition = 0;
+  if (block != NULL) { 
+    restore_condition = block->condition; 
+  }
+
 
   while (sys.suspend) {
 
@@ -444,126 +457,66 @@ static void protocol_exec_rt_suspend()
 
     // Block until initial hold is complete and the machine has stopped motion.
     if (sys.suspend & SUSPEND_HOLD_COMPLETE) {
-
       // Parking manager. Handles de/re-energizing, switch state checks, and parking motions for 
       // sleep states.
-      if (sys.state & STATE_SLEEP) {
-      
-        // Handles retraction motions and de-energizing.
-        if (bit_isfalse(sys.suspend,SUSPEND_RETRACT_COMPLETE)) {
 
-          #ifdef PARKING_ENABLE
-            // Get current position and store restore location and spindle retract waypoint.
-            system_convert_array_steps_to_mpos(parking_target,sys_position);
-            if (bit_isfalse(sys.suspend,SUSPEND_RESTART_RETRACT)) {
-              memcpy(restore_target,parking_target,sizeof(parking_target));
-              retract_waypoint += restore_target[PARKING_AXIS];
-              retract_waypoint = min(retract_waypoint,PARKING_TARGET);
-            }
+      // Handles retraction motions and de-energizing.
+      if (bit_isfalse(sys.suspend,SUSPEND_RETRACT_COMPLETE)) {
 
-            // Execute slow pull-out parking retract motion. Parking requires homing enabled, the
-            // current location not exceeding the parking target location, and laser mode disabled.
-            // NOTE: State is will remain DOOR, until the de-energizing and retract is complete.
-            #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
-            if ((bit_istrue(settings.flags,BITFLAG_HOMING_ENABLE)) &&
-                            (parking_target[PARKING_AXIS] < PARKING_TARGET) &&
-                            bit_isfalse(settings.flags,BITFLAG_LASER_MODE) &&
-                            (sys.override_ctrl == OVERRIDE_PARKING_MOTION)) {
-            #else
-            if ((bit_istrue(settings.flags,BITFLAG_HOMING_ENABLE)) &&
-                            (parking_target[PARKING_AXIS] < PARKING_TARGET) &&
-                            bit_isfalse(settings.flags,BITFLAG_LASER_MODE)) {
-            #endif
-              // Retract spindle by pullout distance. Ensure retraction motion moves away from
-              // the workpiece and waypoint motion doesn't exceed the parking target location.
-              if (parking_target[PARKING_AXIS] < retract_waypoint) {
-                parking_target[PARKING_AXIS] = retract_waypoint;
-                pl_data->feed_rate = PARKING_PULLOUT_RATE;
-                pl_data->condition |= (restore_condition & PL_COND_ACCESSORY_MASK); // Retain accessory state
-                mc_parking_motion(parking_target, pl_data);
-              }
+        #ifdef PARKING_ENABLE
+          // Get current position and store restore location and spindle retract waypoint.
+          system_convert_array_steps_to_mpos(parking_target,sys_position);
+          parking_target[X_AXIS] -= settings.tool_x_offset[sys_tool];
+          memcpy(restore_target,parking_target,sizeof(parking_target));
 
-              // NOTE: Clear accessory state after retract and after an aborted restore motion.
-              pl_data->condition = (PL_COND_FLAG_SYSTEM_MOTION|PL_COND_FLAG_NO_FEED_OVERRIDE);
+          // Execute slow pull-out parking retract motion. Parking requires homing enabled, the
+          // current location not exceeding the parking target location, and laser mode disabled.
+          // NOTE: State is will remain DOOR, until the de-energizing and retract is complete.
+          if ((bit_istrue(settings.flags,BITFLAG_HOMING_ENABLE)) &&
+                          (parking_target[PARKING_AXIS] < -settings.homing_pulloff)) {
+            // move pen up
+            pen_position = parking_target[Z_AXIS];
+            // important to move target exacly equals 10 sys_step on Z_AXIS
+            parking_target[Z_AXIS] = PEN_UP_POSITION;
+            mc_parking_motion(parking_target, pl_data);
+          }
+        #endif
+        sys.suspend |= SUSPEND_RETRACT_COMPLETE;
+      } 
+      // here homming button is teated as parking request
+      if(bit_istrue(presed_control_pins,bit(CONTROL_HOMING_BIT))) {
+          parking_target[PARKING_AXIS] = -PARKING_X_POS;
+          mc_parking_motion(parking_target, pl_data);
+      }
 
-              // Execute fast parking retract motion to parking target location.
-              if (parking_target[PARKING_AXIS] < PARKING_TARGET) {
-                parking_target[PARKING_AXIS] = PARKING_TARGET;
-                pl_data->feed_rate = PARKING_RATE;
-                mc_parking_motion(parking_target, pl_data);
-              }
-
-            }
-
-          #endif
-
-          sys.suspend &= ~(SUSPEND_RESTART_RETRACT);
-          sys.suspend |= SUSPEND_RETRACT_COMPLETE;
-
-        } else {
-
-          
-          if (sys.state == STATE_SLEEP) {
-            report_feedback_message(MESSAGE_SLEEP_MODE);
-            st_go_idle(); // Disable steppers
-            while (!(sys.abort)) { protocol_exec_rt_system(); } // Do nothing until reset.
-            return; // Abort received. Return to re-initialize.
-          }    
-
-          // Handles parking restore and safety door resume.
-          if (sys.suspend & SUSPEND_INITIATE_RESTORE) {
-
-            #ifdef PARKING_ENABLE
-              // Execute fast restore motion to the pull-out position. Parking requires homing enabled.
-              // NOTE: State is will remain DOOR, until the de-energizing and retract is complete.
-              #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
-              if (((settings.flags & (BITFLAG_HOMING_ENABLE|BITFLAG_LASER_MODE)) == BITFLAG_HOMING_ENABLE) &&
-                   (sys.override_ctrl == OVERRIDE_PARKING_MOTION)) {
-              #else
-              if ((settings.flags & (BITFLAG_HOMING_ENABLE|BITFLAG_LASER_MODE)) == BITFLAG_HOMING_ENABLE) {
-              #endif
-                // Check to ensure the motion doesn't move below pull-out position.
-                if (parking_target[PARKING_AXIS] <= PARKING_TARGET) {
-                  parking_target[PARKING_AXIS] = retract_waypoint;
-                  pl_data->feed_rate = PARKING_RATE;
-                  mc_parking_motion(parking_target, pl_data);
-                }
-              }
-            #endif
-
-            #ifdef PARKING_ENABLE
-              // Execute slow plunge motion from pull-out position to resume position.
-              #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
-              if (((settings.flags & (BITFLAG_HOMING_ENABLE|BITFLAG_LASER_MODE)) == BITFLAG_HOMING_ENABLE) &&
-                   (sys.override_ctrl == OVERRIDE_PARKING_MOTION)) {
-              #else
-              if ((settings.flags & (BITFLAG_HOMING_ENABLE|BITFLAG_LASER_MODE)) == BITFLAG_HOMING_ENABLE) {
-              #endif
-                // Block if safety door re-opened during prior restore actions.
-                if (bit_isfalse(sys.suspend,SUSPEND_RESTART_RETRACT)) {
-                  // Regardless if the retract parking motion was a valid/safe motion or not, the
-                  // restore parking motion should logically be valid, either by returning to the
-                  // original position through valid machine space or by not moving at all.
-                  pl_data->feed_rate = PARKING_PULLOUT_RATE;
-									pl_data->condition |= (restore_condition & PL_COND_ACCESSORY_MASK); // Restore accessory state
-                  mc_parking_motion(restore_target, pl_data);
-                }
-              }
-            #endif
-
-            if (bit_isfalse(sys.suspend,SUSPEND_RESTART_RETRACT)) {
-              sys.suspend |= SUSPEND_RESTORE_COMPLETE;
-              system_set_exec_state_flag(EXEC_CYCLE_START); // Set to resume program.
+      // Handles parking restore and safety door resume.
+      if (sys.suspend & SUSPEND_INITIATE_RESTORE) {
+        #ifdef PARKING_ENABLE
+          // Execute fast restore motion to the pull-out position. Parking requires homing enabled.
+          if ((settings.flags & (BITFLAG_HOMING_ENABLE|BITFLAG_LASER_MODE)) == BITFLAG_HOMING_ENABLE) {
+            // Check to ensure the motion doesn't move below pull-out position.
+            if (restore_target[PARKING_AXIS] <= -settings.homing_pulloff) {
+              // ensure pen is up
+              // important to move target exacly equals 10
+              parking_target[Z_AXIS] = PEN_UP_POSITION;
+              mc_parking_motion(parking_target, pl_data);
+              // move over saved XY position
+              // important to move target exacly equals 10
+              restore_target[Z_AXIS] = PEN_UP_POSITION;
+              mc_parking_motion(restore_target, pl_data);
+              // restore pen position
+              restore_target[Z_AXIS] = pen_position;
+              mc_parking_motion(restore_target, pl_data);
             }
           }
-
-        }
-
-      } 
-
-    }
+        #endif
+        sys.suspend &= ~(SUSPEND_INITIATE_RESTORE);
+        sys.suspend |= SUSPEND_RESTORE_COMPLETE;
+        system_set_exec_state_flag(EXEC_CYCLE_START); // Set to resume program.
+      }
+    } 
 
     protocol_exec_rt_system();
-
   }
+
 }
