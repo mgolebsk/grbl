@@ -38,6 +38,7 @@ const __flash settings_t defaults = {\
     .homing_pulloff = DEFAULT_HOMING_PULLOFF,
     .flags = (DEFAULT_REPORT_INCHES << BIT_REPORT_INCHES) | \
              (DEFAULT_LASER_MODE << BIT_LASER_MODE) | \
+             (DEFAULT_CUTTER_MODE << BIT_CUTTER_MODE) | \
              (DEFAULT_INVERT_ST_ENABLE << BIT_INVERT_ST_ENABLE) | \
              (DEFAULT_HARD_LIMIT_ENABLE << BIT_HARD_LIMIT_ENABLE) | \
              (DEFAULT_HOMING_ENABLE << BIT_HOMING_ENABLE) | \
@@ -247,12 +248,10 @@ uint8_t settings_store_global_setting(uint8_t parameter, float value) {
         if (int_value) { settings.flags |= BITFLAG_INVERT_LIMIT_PINS; }
         else { settings.flags &= ~BITFLAG_INVERT_LIMIT_PINS; }
         break;
-      // FIXME, NIE UZYWAMY TEGO USTAWIENIA  
-      // case 6: // Reset to ensure change. Immediate re-init may cause problems.
-      //   if (int_value) { settings.flags |= BITFLAG_INVERT_PROBE_PIN; }
-      //   else { settings.flags &= ~BITFLAG_INVERT_PROBE_PIN; }
-      //   probe_configure_invert_mask(false);
-      //   break;
+      case 6: // Cutter (no pen) node
+        if (int_value) { settings.flags |= BITFLAG_CUTTER_MODE; }
+        else { settings.flags &= ~BITFLAG_CUTTER_MODE; }
+        break;
       case 10: settings.status_report_mask = int_value; break;
       case 11: settings.junction_deviation = value; break;
       case 12: settings.arc_tolerance = value; break;

@@ -138,8 +138,7 @@ void report_grbl_settings() {
   report_util_uint8_setting(3,settings.dir_invert_mask);
   report_util_uint8_setting(4,bit_istrue(settings.flags,BITFLAG_INVERT_ST_ENABLE));
   report_util_uint8_setting(5,bit_istrue(settings.flags,BITFLAG_INVERT_LIMIT_PINS));
-  // FIXME DO REUZYCIA
-  // report_util_uint8_setting(6,bit_istrue(settings.flags,BITFLAG_INVERT_PROBE_PIN));
+  report_util_uint8_setting(6,bit_istrue(settings.flags,BITFLAG_CUTTER_MODE));
   report_util_uint8_setting(10,settings.status_report_mask);
   report_util_float_setting(11,settings.junction_deviation,N_DECIMAL_SETTINGVALUE);
   report_util_float_setting(12,settings.arc_tolerance,N_DECIMAL_SETTINGVALUE);
@@ -157,15 +156,16 @@ void report_grbl_settings() {
   // report_util_float_setting(31,settings.rpm_min,N_DECIMAL_RPMVALUE);
   report_util_uint8_setting(32,0);
   // Print axis settings
-  uint8_t idx, set_idx;
+  uint8_t idx, set_idx, curr_idx;
   uint8_t val = AXIS_SETTINGS_START_VAL;
   for (set_idx=0; set_idx<AXIS_N_SETTINGS; set_idx++) {
     for (idx=0; idx<N_AXIS; idx++) {
+      curr_idx = val+idx;
       switch (set_idx) {
-        case 0: report_util_float_setting(val+idx,settings.steps_per_mm[idx],N_DECIMAL_SETTINGVALUE); break;
-        case 1: report_util_float_setting(val+idx,settings.max_rate[idx],N_DECIMAL_SETTINGVALUE); break;
-        case 2: report_util_float_setting(val+idx,settings.acceleration[idx]/(60*60),N_DECIMAL_SETTINGVALUE); break;
-        case 3: report_util_float_setting(val+idx,-settings.max_travel[idx],N_DECIMAL_SETTINGVALUE); break;
+        case 0: report_util_float_setting(curr_idx,settings.steps_per_mm[idx],N_DECIMAL_SETTINGVALUE); break;
+        case 1: report_util_float_setting(curr_idx,settings.max_rate[idx],N_DECIMAL_SETTINGVALUE); break;
+        case 2: report_util_float_setting(curr_idx,settings.acceleration[idx]/(60*60),N_DECIMAL_SETTINGVALUE); break;
+        case 3: report_util_float_setting(curr_idx,-settings.max_travel[idx],N_DECIMAL_SETTINGVALUE); break;
       }
     }
     val += AXIS_SETTINGS_INCREMENT;
@@ -496,13 +496,13 @@ void report_realtime_status()
       report_util_axis_values(wco);
 
       // section below can be commented out to save some program memory
-      printPgmString(PSTR("|PG:"));
-      for (idx=0; idx<N_AXIS_PAPER; idx++) {
-        printFloat_CoordValue(paper_min_travel[idx]);
-        serial_write(',');
-        printFloat_CoordValue(paper_max_travel[idx]);
-        if (idx < (N_AXIS_PAPER-1)) { serial_write(';'); }
-      }
+      // printPgmString(PSTR("|PG:"));
+      // for (idx=0; idx<N_AXIS_PAPER; idx++) {
+      //   printFloat_CoordValue(paper_min_travel[idx]);
+      //   serial_write(',');
+      //   printFloat_CoordValue(paper_max_travel[idx]);
+      //   if (idx < (N_AXIS_PAPER-1)) { serial_write(';'); }
+      // }
     }
   #endif
 

@@ -255,8 +255,10 @@ void pen_move(uint8_t tool, boolean up)
     }
     else {
         // to protect pen
-        setChannelPWM(toolChannel, PEN_HALF_DOWN);
-        delay_ms(PEN_HALF_DOWN_DELAY);
+        if (bit_isfalse(settings.flags,BITFLAG_CUTTER_MODE)) {
+            setChannelPWM(toolChannel, PEN_HALF_DOWN);
+            delay_ms(PEN_HALF_DOWN_DELAY);
+        }
         setChannelPWM(toolChannel, PEN_DOWN);
     }
 }

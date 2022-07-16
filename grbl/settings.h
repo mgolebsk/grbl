@@ -37,8 +37,7 @@
 #define BIT_HOMING_ENABLE      4
 #define BIT_SOFT_LIMIT_ENABLE  5
 #define BIT_INVERT_LIMIT_PINS  6
-// FIXME DO REUZYCIA
-#define BIT_INVERT_PROBE_PIN_XXX   7
+#define BIT_CUTTER_MODE        7
 
 #define BITFLAG_REPORT_INCHES      bit(BIT_REPORT_INCHES)
 #define BITFLAG_LASER_MODE         bit(BIT_LASER_MODE)
@@ -47,8 +46,7 @@
 #define BITFLAG_HOMING_ENABLE      bit(BIT_HOMING_ENABLE)
 #define BITFLAG_SOFT_LIMIT_ENABLE  bit(BIT_SOFT_LIMIT_ENABLE)
 #define BITFLAG_INVERT_LIMIT_PINS  bit(BIT_INVERT_LIMIT_PINS)
-// FIXME DO REUZYCIA
-#define BITFLAG_INVERT_PROBE_PIN_XXX   bit(BIT_INVERT_PROBE_PIN)
+#define BITFLAG_CUTTER_MODE        bit(BIT_CUTTER_MODE)
 
 // Define status reporting boolean enable bit flags in settings.status_report_mask
 #define BITFLAG_RT_STATUS_POSITION_TYPE     bit(0)
