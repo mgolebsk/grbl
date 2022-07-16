@@ -876,7 +876,7 @@ uint8_t gc_execute_line(char *line)
 
   if (gc_state.tool != gc_block.values.t) {
     uint8_t condition = pl_data->condition;
-    pl_data->condition = (PL_COND_FLAG_SYSTEM_MOTION|PL_COND_FLAG_NO_FEED_OVERRIDE);
+    pl_data->condition = (PL_COND_FLAG_NO_FEED_OVERRIDE|PL_COND_FLAG_RAPID_MOTION);
     pl_data->feed_rate = settings.homing_seek_rate;
     if(gc_state.position[Z_AXIS] > 0.0) {
       gc_state.tool = gc_block.values.t;

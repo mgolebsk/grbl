@@ -1,10 +1,7 @@
 #include "grbl.h"
 
-
 #define PAPER_INIT_FEED 15.0
 #define PAPER_EJECT_FEED 50.0
-
-
 
 static uint8_t busy;
 
@@ -105,10 +102,11 @@ void pl_cycle() {
   //
   // 03 - detect right edge of the paper
   //
+  float tool_x_offset = settings.tool_x_offset[sys_tool];
 
   // move caret right
   system_convert_array_steps_to_mpos(target, sys_position);
-  target[X_AXIS] = -settings.homing_pulloff + settings.tool_x_offset[sys_tool];
+  target[X_AXIS] = -settings.homing_pulloff + tool_x_offset;
   plan_buffer_line(target, &pl_data);
   protocol_buffer_synchronize();
 
@@ -119,7 +117,7 @@ void pl_cycle() {
 
   if(sys.probe_succeeded) {
     paper_min_travel[X_AXIS] = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) 
-      - settings.tool_x_offset[sys_tool];
+      - tool_x_offset;
   }
   else {
     paper_min_travel[X_AXIS] = -settings.homing_pulloff;
@@ -137,7 +135,7 @@ void pl_cycle() {
 
   if(sys.probe_succeeded) {
     float maxTravel = system_convert_axis_steps_to_mpos(sys_probe_position, X_AXIS) 
-      - settings.tool_x_offset[sys_tool];
+      - tool_x_offset;
     gc_state.coord_offset[X_AXIS] = maxTravel;
     paper_max_travel[X_AXIS] = maxTravel;
   }
@@ -167,8 +165,10 @@ void pl_cycle() {
 
   system_convert_array_steps_to_mpos(target, sys_position);
   target[Y_AXIS] = settings.max_travel[Y_AXIS];
-  target[X_AXIS] -= settings.tool_x_offset[sys_tool];
-  gc_state.coord_offset[Z_AXIS] = 0.0;
+  target[X_AXIS] -= tool_x_offset;
+  gc_state.coord_offset[X_AXIS] = target[X_AXIS]-gc_state.coord_system[X_AXIS];
+  gc_state.coord_offset[Z_AXIS] = 0;
+  gc_state.coord_system[Z_AXIS] = 0;
   plan_buffer_line(target, &pl_data);
 
   protocol_buffer_synchronize();
