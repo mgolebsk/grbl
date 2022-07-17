@@ -45,7 +45,7 @@ static void report_util_axis_values(float *axis_value) {
 }
 
 
-static void report_util_uint8_setting(uint8_t n, int val) { 
+static void report_util_uint8_setting(uint8_t n, uint8_t val) { 
   report_util_setting_prefix(n); 
   print_uint8_base10(val); 
   report_util_line_feed(); // report_util_setting_string(n); 
@@ -158,15 +158,17 @@ void report_grbl_settings() {
   // Print axis settings
   uint8_t idx, set_idx, curr_idx;
   uint8_t val = AXIS_SETTINGS_START_VAL;
+  float value;
   for (set_idx=0; set_idx<AXIS_N_SETTINGS; set_idx++) {
     for (idx=0; idx<N_AXIS; idx++) {
       curr_idx = val+idx;
       switch (set_idx) {
-        case 0: report_util_float_setting(curr_idx,settings.steps_per_mm[idx],N_DECIMAL_SETTINGVALUE); break;
-        case 1: report_util_float_setting(curr_idx,settings.max_rate[idx],N_DECIMAL_SETTINGVALUE); break;
-        case 2: report_util_float_setting(curr_idx,settings.acceleration[idx]/(60*60),N_DECIMAL_SETTINGVALUE); break;
-        case 3: report_util_float_setting(curr_idx,-settings.max_travel[idx],N_DECIMAL_SETTINGVALUE); break;
+        case 0: value = settings.steps_per_mm[idx]; break;
+        case 1: value = settings.max_rate[idx]; break;
+        case 2: value = settings.acceleration[idx]/(60*60); break;
+        case 3: value = -settings.max_travel[idx]; break;
       }
+      report_util_float_setting(curr_idx, value, N_DECIMAL_SETTINGVALUE);
     }
     val += AXIS_SETTINGS_INCREMENT;
   }
@@ -496,13 +498,13 @@ void report_realtime_status()
       report_util_axis_values(wco);
 
       // section below can be commented out to save some program memory
-      // printPgmString(PSTR("|PG:"));
-      // for (idx=0; idx<N_AXIS_PAPER; idx++) {
-      //   printFloat_CoordValue(paper_min_travel[idx]);
-      //   serial_write(',');
-      //   printFloat_CoordValue(paper_max_travel[idx]);
-      //   if (idx < (N_AXIS_PAPER-1)) { serial_write(';'); }
-      // }
+      printPgmString(PSTR("|PG:"));
+      for (idx=0; idx<N_AXIS_PAPER; idx++) {
+        printFloat_CoordValue(paper_min_travel[idx]);
+        serial_write(',');
+        printFloat_CoordValue(paper_max_travel[idx]);
+        if (idx < (N_AXIS_PAPER-1)) { serial_write(';'); }
+      }
     }
   #endif
 

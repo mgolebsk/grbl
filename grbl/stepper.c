@@ -258,6 +258,29 @@ void st_go_idle()
   else { STEPPERS_DISABLE_PORT &= ~(1<<STEPPERS_DISABLE_BIT); }
 }
 
+static void make_bresenham_step(const uint8_t axis, uint32_t *counter_axis, const uint8_t step_mask, const uint8_t direction_mask) {
+  #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
+    *counter_axis += st.steps[axis];
+  #else
+    *counter_axis += st.exec_block->steps[axis];
+  #endif
+  if (*counter_axis > st.exec_block->step_event_count) {
+    st.step_outbits |= step_mask;
+    *counter_axis -= st.exec_block->step_event_count;
+    uint8_t pen_request;
+    if (st.exec_block->direction_bits & direction_mask) { 
+      pen_request = EXEC_PEN_REQUEST_DOWN;
+      sys_position[axis]--; 
+    }
+    else { 
+      pen_request = EXEC_PEN_REQUEST_UP;
+      sys_position[axis]++; 
+    }
+    if(axis==Z_AXIS && sys_position[Z_AXIS]==0) {
+      sys_rt_pen_motion |= pen_request;
+    }
+  }
+}
 
 /* "The Stepper Driver Interrupt" - This timer interrupt is the workhorse of Grbl. Grbl employs
    the venerable Bresenham line algorithm to manage and exactly synchronize multi-axis moves.
@@ -428,63 +451,9 @@ ISR(TIMER1_COMPA_vect)
 
 
   // Execute step displacement profile by Bresenham line algorithm
-  #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-    st.counter_x += st.steps[X_AXIS];
-  #else
-    st.counter_x += st.exec_block->steps[X_AXIS];
-  #endif
-  if (st.counter_x > st.exec_block->step_event_count) {
-    st.step_outbits |= (1<<X_STEP_BIT);
-    #if defined(ENABLE_DUAL_AXIS) && (DUAL_AXIS_SELECT == X_AXIS)
-      st.step_outbits_dual = (1<<DUAL_STEP_BIT);
-    #endif
-    st.counter_x -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & (1<<X_DIRECTION_BIT)) { 
-      sys_position[X_AXIS]--; 
-    }
-    else { 
-      sys_position[X_AXIS]++; 
-    }
-  }
-  #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-    st.counter_y += st.steps[Y_AXIS];
-  #else
-    st.counter_y += st.exec_block->steps[Y_AXIS];
-  #endif
-  if (st.counter_y > st.exec_block->step_event_count) {
-    st.step_outbits |= (1<<Y_STEP_BIT);
-    #if defined(ENABLE_DUAL_AXIS) && (DUAL_AXIS_SELECT == Y_AXIS)
-      st.step_outbits_dual = (1<<DUAL_STEP_BIT);
-    #endif
-    st.counter_y -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & (1<<Y_DIRECTION_BIT)) { 
-      sys_position[Y_AXIS]--; 
-    }
-    else { 
-      sys_position[Y_AXIS]++; 
-    }
-  }
-  // #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-  //   st.counter_z += st.steps[Z_AXIS];
-  // #else
-  //   st.counter_z += st.exec_block->steps[Z_AXIS];
-  // #endif
-  // if (st.counter_z > st.exec_block->step_event_count) {
-  //   st.step_outbits |= (1<<Z_STEP_BIT);
-  //   st.counter_z -= st.exec_block->step_event_count;
-  //   if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { 
-  //     if (sys_position[Z_AXIS]==0) {
-  //       sys_rt_pen_motion |= EXEC_PEN_REQUEST_DOWN;
-  //     }
-  //     sys_position[Z_AXIS]--; 
-  //   }
-  //   else { 
-  //     if (sys_position[Z_AXIS]==0) {
-  //       sys_rt_pen_motion |= EXEC_PEN_REQUEST_UP;
-  //     }
-  //     sys_position[Z_AXIS]++; 
-  //   }
-  // }
+  make_bresenham_step(X_AXIS, &st.counter_x, (1<<X_STEP_BIT), (1<<X_DIRECTION_BIT));
+  make_bresenham_step(Y_AXIS, &st.counter_y, (1<<Y_STEP_BIT), (1<<Y_DIRECTION_BIT));
+  make_bresenham_step(Z_AXIS, &st.counter_z, (1<<Z_STEP_BIT), (1<<Z_DIRECTION_BIT));
 
   // During a homing cycle, lock out and prevent desired axes from moving.
   if (sys.state == STATE_HOMING) { 
@@ -730,7 +699,7 @@ void st_prep_buffer()
 
       } else {
 
-        if(pl_block->steps[X_AXIS]==0 && pl_block->steps[Y_AXIS]==0) {
+        if(pl_block->steps[X_AXIS]==0 && pl_block->steps[Y_AXIS]==0 && pl_block->steps[Z_AXIS]>0) {
           uint32_t z_steps = pl_block->steps[Z_AXIS];
           uint8_t direction_bits = pl_block->direction_bits;
           uint8_t tool = pl_block->tool;
